@@ -5,6 +5,9 @@
       "rev": "1801b0541f4fda118a10798fd3486bb7051c5dd6"
     }
   },
+  "lib/foundry-chainlink-toolkit": {
+    "rev": "d610ec9ef54c325de7de1a5622c19933b2ae26cf"
+  },
   "lib/v4-core": {
     "tag": {
       "name": "v4.0.0",
