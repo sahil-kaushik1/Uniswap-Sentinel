@@ -175,3 +175,13 @@ This project addresses the track criteria by:
 - **Reliability:** Using the Hook as a hard "Circuit Breaker" ensures the Agent cannot drain funds via bad math.
 - **Composability:** Deeply integrating Uniswap v4 with lending protocols (Aave).
 - **Agent-Driven:** Shifting complex volatility math off-chain to save gas.
+
+---
+
+## 🤖 For AI Agents & Builders
+
+If you are an LLM (Cursor, Copilot, Windsurf) or a developer building on top of this:
+**[👉 READ THE AGENT CONTEXT (agents.md)](./agents.md)**
+
+This file contains the architectural blueprint, critical code paths, and strict safety rules defined for this protocol.
+
