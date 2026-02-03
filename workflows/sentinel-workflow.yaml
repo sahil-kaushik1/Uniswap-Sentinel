@@ -10,7 +10,7 @@ network:
   chain: base-mainnet
   chainId: 8453
 
-# Contract Addresses (Base Mainnet)
+# Contract Addresses (Base Mainnet) ## need to to testnet
 contracts:
   sentinelHook: "0x0000000000000000000000000000000000000000" # TODO: Update after deployment
   poolManager: "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
