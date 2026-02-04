@@ -10,6 +10,7 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {SentinelHook} from "../src/SentinelHook.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
 /// @title DeploySentinel
 /// @notice Multi-Pool Deployment script for Sentinel Hook
@@ -92,8 +93,15 @@ contract DeploySentinel is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy the multi-pool Sentinel Hook
-        hook = new SentinelHook(poolManager, aavePool, maintainer);
+        // Deploy the multi-pool Sentinel Hook at a valid hook address
+        uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG);
+        bytes memory constructorArgs = abi.encode(poolManager, aavePool, maintainer);
+        address create2Deployer = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+        (address expectedAddress, bytes32 salt) =
+            HookMiner.find(create2Deployer, flags, type(SentinelHook).creationCode, constructorArgs);
+
+        hook = new SentinelHook{salt: salt}(poolManager, aavePool, maintainer);
+        require(address(hook) == expectedAddress, "Hook address mismatch");
 
         console.log("\n=== Hook Deployed ===");
         console.log("Sentinel Hook:", address(hook));

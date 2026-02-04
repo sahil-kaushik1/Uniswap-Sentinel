@@ -199,6 +199,35 @@ contract SentinelIntegrationTest is Test {
         assertEq(linkState.maxDeviationBps, 800);
     }
 
+    function testPoolIndexLookup() public checkFork {
+        hook.initializePool(
+            ethUsdcKey,
+            ETH_USD_FEED,
+            Currency.wrap(USDC),
+            AUSDC,
+            500,
+            -887220,
+            887220
+        );
+
+        PoolId fetched = hook.getPoolByIndex(0);
+        assertEq(PoolId.unwrap(fetched), PoolId.unwrap(ethUsdcPoolId));
+    }
+
+    function testEmergencyWithdraw_NoRevert() public checkFork {
+        hook.initializePool(
+            ethUsdcKey,
+            ETH_USD_FEED,
+            Currency.wrap(USDC),
+            AUSDC,
+            500,
+            -887220,
+            887220
+        );
+
+        hook.emergencyWithdrawFromAave(ethUsdcPoolId);
+    }
+
     function testCannotInitializePoolTwice() public checkFork {
         // Initialize first time
         hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);

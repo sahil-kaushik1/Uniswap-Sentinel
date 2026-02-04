@@ -16,6 +16,4 @@ anvil = "http://127.0.0.1:8545"
 [etherscan]
 sepolia = { key = "${ETHERSCAN_API_KEY}", chain = "sepolia" }
 
-
-
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
