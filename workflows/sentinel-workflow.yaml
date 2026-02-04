@@ -1,22 +1,30 @@
-# Sentinel Liquidity Manager - Chainlink CRE Workflow
-# This workflow orchestrates automated liquidity rebalancing for Uniswap v4
+# Sentinel Multi-Pool Liquidity Manager - Chainlink CRE Workflow
+# This workflow orchestrates automated liquidity rebalancing across ALL Uniswap v4 pools
+# that use the SentinelHook
 
-name: sentinel-liquidity-manager
-description: Trust-minimized agentic liquidity management with yield optimization
-version: 1.0.0
+name: sentinel-multi-pool-manager
+description: Trust-minimized agentic liquidity management with per-pool optimization
+version: 2.0.0
 
-# Network Configuration
+# ==============================================================================
+# NETWORK CONFIGURATION
+# ==============================================================================
 network:
   chain: base-mainnet
   chainId: 8453
 
-# Contract Addresses (Base Mainnet) ## need to to testnet
+# ==============================================================================
+# CONTRACT ADDRESSES (Base Mainnet)
+# ==============================================================================
 contracts:
-  sentinelHook: "0x0000000000000000000000000000000000000000" # TODO: Update after deployment
-  poolManager: "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
-  aavePool: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5"
+  sentinelHook: "0x0000000000000000000000000000000000000000"  # TODO: Update after deployment
+  poolManager: "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"   # Uniswap v4 PoolManager
+  aavePool: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5"      # Aave v3 Pool
 
-# Data Sources
+# ==============================================================================
+# ORACLE DATA SOURCES (Base Chainlink Feeds)
+# Note: Each pool has its own oracle configured in PoolState
+# ==============================================================================
 dataSources:
   chainlink:
     - name: eth-usd
@@ -25,225 +33,362 @@ dataSources:
     - name: usdc-usd
       address: "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B"
       description: "USDC/USD price feed on Base"
+    - name: btc-usd
+      address: "0xCCADC697c55bbB68dc5bCdf8d3CBe83CdD4E071E"
+      description: "BTC/USD price feed on Base"
+    - name: arb-usd
+      address: "0x0000000000000000000000000000000000000000"  # TODO: Add ARB oracle
+      description: "ARB/USD price feed on Base"
 
-# Workflow Definition
+# ==============================================================================
+# WORKFLOW DEFINITION - MULTI-POOL EVENT-DRIVEN
+# ==============================================================================
 workflow:
-  # ===================================================================
-  # TRIGGER: Monitor for TickCrossed events
-  # ===================================================================
+  # ============================================================================
+  # TRIGGER: Monitor for TickCrossed events from ANY pool using SentinelHook
+  # ============================================================================
   trigger:
     type: event
     contract: "${contracts.sentinelHook}"
     event: TickCrossed
     abi:
-      - "event TickCrossed(int24 indexed tickLower, int24 indexed tickUpper, int24 indexed currentTick)"
-    description: "Triggered when price crosses outside the active range"
+      - "event TickCrossed(bytes32 indexed poolId, int24 tickLower, int24 tickUpper, int24 indexed currentTick)"
+    description: "Triggered when price crosses outside the active range in ANY Sentinel pool"
     
-    # Also run on a time-based schedule as backup
+    # Fallback: periodic health check for ALL registered pools
     fallback:
       type: cron
-      schedule: "0 */6 * * *" # Every 6 hours
-      description: "Periodic check for rebalancing opportunities"
+      schedule: "0 */4 * * *"  # Every 4 hours
+      description: "Periodic check for yield optimization opportunities across all pools"
 
-  # ===================================================================
-  # STEP 1: Fetch Market Data
-  # ===================================================================
+  # ============================================================================
+  # WORKFLOW STEPS
+  # ============================================================================
   steps:
-    - name: fetch_market_data
-      type: http_request
-      method: GET
-      url: "https://api.coingecko.com/api/v3/simple/price"
-      params:
-        ids: "ethereum,usd-coin"
-        vs_currencies: "usd"
-        include_24hr_vol: "true"
-        include_24hr_change: "true"
-      output: marketData
-      description: "Fetch current market prices and 24h volatility"
+    # ==========================================================================
+    # STEP 1: Fetch Pool-Specific Configuration
+    # ==========================================================================
+    - name: get_pool_state
+      type: read_contract
+      contract: "${contracts.sentinelHook}"
+      function: "getPoolState"
+      args:
+        poolId: "${trigger.poolId}"
+      output: poolState
+      description: "Get pool-specific configuration (oracle, yield currency, current range)"
 
+    - name: get_pool_tokens
+      type: read_contract
+      contract: "${contracts.poolManager}"
+      function: "getPoolTokens"
+      args:
+        poolId: "${trigger.poolId}"
+      output: poolTokens
+      description: "Get the token addresses for this pool"
+
+    # ==========================================================================
+    # STEP 2: Fetch Market Data for This Pool's Assets
+    # ==========================================================================
     - name: get_chainlink_price
       type: read_contract
-      contract: "${dataSources.chainlink[0].address}"
+      contract: "${poolState.priceFeed}"
       function: "latestRoundData"
       output: oracleData
-      description: "Get authoritative price from Chainlink"
+      description: "Get authoritative price from pool's configured Chainlink oracle"
 
-    - name: get_pool_state
+    - name: fetch_market_volatility
+      type: http_request
+      method: GET
+      url: "https://api.coingecko.com/api/v3/coins/${poolState.baseAssetId}/market_chart"
+      params:
+        vs_currency: "usd"
+        days: "1"
+        interval: "hourly"
+      output: marketData
+      description: "Fetch 24h price data for volatility calculation"
+
+    - name: get_current_pool_state
       type: read_contract
       contract: "${contracts.poolManager}"
       function: "getSlot0"
       args:
-        poolKey: "${workflow.trigger.poolKey}"
-      output: poolState
-      description: "Get current pool state (price, tick, etc.)"
+        poolKey: "${poolState.poolKey}"
+      output: slot0
+      description: "Get current pool state (sqrtPriceX96, tick)"
 
-  # ===================================================================
-  # STEP 2: Calculate Volatility & Strategy
-  # ===================================================================
+    # ==========================================================================
+    # STEP 3: Calculate Pool-Specific Volatility & Strategy
+    # ==========================================================================
     - name: calculate_volatility
       type: compute
       language: javascript
       code: |
-        // Calculate 24h volatility in basis points
-        const priceChange24h = Math.abs(marketData.ethereum.usd_24h_change || 0);
-        const volatility = Math.floor(priceChange24h * 100); // Convert to basis points
-        
-        // Volatility buckets for strategy
-        let strategy = {};
-        if (volatility < 200) {
-          // Low volatility (< 2%): Tight range, more idle capital
-          strategy = {
-            rangeWidth: 200,
-            volatilityBps: volatility,
-            riskLevel: "low"
-          };
-        } else if (volatility < 500) {
-          // Medium volatility (2-5%): Medium range
-          strategy = {
-            rangeWidth: 600,
-            volatilityBps: volatility,
-            riskLevel: "medium"
-          };
-        } else {
-          // High volatility (> 5%): Wide range, more active capital
-          strategy = {
-            rangeWidth: 1500,
-            volatilityBps: volatility,
-            riskLevel: "high"
-          };
+        // Calculate realized volatility from hourly price data
+        const prices = marketData.prices.map(p => p[1]);
+        const returns = [];
+        for (let i = 1; i < prices.length; i++) {
+          returns.push(Math.log(prices[i] / prices[i-1]));
         }
         
-        return strategy;
-      output: volatilityStrategy
-      description: "Calculate optimal range based on market volatility"
+        // Annualized volatility in basis points
+        const variance = returns.reduce((sum, r) => sum + r * r, 0) / returns.length;
+        const hourlyVol = Math.sqrt(variance);
+        const annualizedVol = hourlyVol * Math.sqrt(24 * 365);
+        const volatilityBps = Math.floor(annualizedVol * 10000);
+        
+        // Determine risk bucket
+        let riskLevel, rangeWidth;
+        if (volatilityBps < 2000) {        // < 20% annual vol
+          riskLevel = "low";
+          rangeWidth = 200;                 // Tight range
+        } else if (volatilityBps < 5000) { // 20-50% annual vol
+          riskLevel = "medium";
+          rangeWidth = 600;                 // Medium range
+        } else if (volatilityBps < 10000) { // 50-100% annual vol
+          riskLevel = "high";
+          rangeWidth = 1500;                // Wide range
+        } else {                            // > 100% annual vol
+          riskLevel = "extreme";
+          rangeWidth = 3000;                // Very wide range
+        }
+        
+        return {
+          volatilityBps,
+          riskLevel,
+          rangeWidth,
+          currentPrice: prices[prices.length - 1]
+        };
+      output: volatilityAnalysis
+      description: "Calculate volatility and determine optimal range width"
 
+    # ==========================================================================
+    # STEP 4: Calculate Optimal New Range for This Pool
+    # ==========================================================================
     - name: calculate_new_range
       type: compute
       language: javascript
       code: |
-        // Get current tick from pool state
-        const currentTick = poolState.tick;
-        const rangeWidth = volatilityStrategy.rangeWidth;
+        const currentTick = slot0.tick;
+        const rangeWidth = volatilityAnalysis.rangeWidth;
+        const tickSpacing = poolState.tickSpacing || 60;  // Default for 0.3% fee
         
-        // Calculate symmetric range around current price
-        const tickSpacing = 60; // Common tick spacing for 0.3% fee tier
+        // Center the range around current tick
         const halfRange = Math.floor(rangeWidth / 2);
         
-        // Round to tick spacing
+        // Round to valid tick spacing
         const newTickLower = Math.floor((currentTick - halfRange) / tickSpacing) * tickSpacing;
         const newTickUpper = Math.ceil((currentTick + halfRange) / tickSpacing) * tickSpacing;
         
+        // Validate range makes sense
+        const actualWidth = newTickUpper - newTickLower;
+        const isValidRange = newTickLower < currentTick && currentTick < newTickUpper;
+        
         return {
-          tickLower: newTickLower,
-          tickUpper: newTickUpper,
-          currentTick: currentTick,
-          rangeWidth: newTickUpper - newTickLower,
-          volatility: volatilityStrategy.volatilityBps
+          poolId: trigger.poolId,
+          newTickLower,
+          newTickUpper,
+          currentTick,
+          rangeWidth: actualWidth,
+          volatility: volatilityAnalysis.volatilityBps,
+          riskLevel: volatilityAnalysis.riskLevel,
+          isValidRange
         };
       output: newRange
-      description: "Calculate new optimal liquidity range"
+      description: "Calculate new optimal liquidity range centered on current price"
 
-  # ===================================================================
-  # STEP 3: DON Consensus
-  # ===================================================================
+    # ==========================================================================
+    # STEP 5: DON Consensus on Rebalancing Parameters
+    # ==========================================================================
     - name: report_consensus
       type: consensus
       input:
-        newTickLower: "${newRange.tickLower}"
-        newTickUpper: "${newRange.tickUpper}"
+        poolId: "${newRange.poolId}"
+        newTickLower: "${newRange.newTickLower}"
+        newTickUpper: "${newRange.newTickUpper}"
         volatility: "${newRange.volatility}"
-      threshold: 0.66 # 66% of DON nodes must agree
+      threshold: 0.66  # 2/3 of DON nodes must agree
       description: "Decentralized consensus on rebalancing parameters"
       
-      # Validation rules
+      # Validation rules applied before consensus
       validation:
-        - check: "newRange.tickLower < newRange.currentTick"
+        - check: "newRange.isValidRange == true"
+          error: "Calculated range is invalid (current tick outside range)"
+        - check: "newRange.newTickLower < newRange.currentTick"
           error: "Lower tick must be below current tick"
-        - check: "newRange.tickUpper > newRange.currentTick"
+        - check: "newRange.newTickUpper > newRange.currentTick"
           error: "Upper tick must be above current tick"
         - check: "newRange.rangeWidth >= 100"
-          error: "Range too narrow (min 100 ticks)"
+          error: "Range too narrow (minimum 100 ticks for gas efficiency)"
         - check: "newRange.rangeWidth <= 5000"
-          error: "Range too wide (max 5000 ticks)"
+          error: "Range too wide (maximum 5000 ticks for capital efficiency)"
 
-  # ===================================================================
-  # STEP 4: Execute Rebalancing Transaction
-  # ===================================================================
+    # ==========================================================================
+    # STEP 6: Execute Pool-Specific Rebalancing Transaction
+    # ==========================================================================
     - name: execute_rebalance
       type: write_contract
       contract: "${contracts.sentinelHook}"
       function: "maintain"
       args:
-        - newTickLower: "${newRange.tickLower}"
-        - newTickUpper: "${newRange.tickUpper}"
-        - volatility: "${newRange.volatility}"
-      gas_limit: 500000
+        poolId: "${newRange.poolId}"
+        newTickLower: "${newRange.newTickLower}"
+        newTickUpper: "${newRange.newTickUpper}"
+        volatility: "${newRange.volatility}"
+      gas_limit: 600000
       condition: "${report_consensus.approved == true}"
-      description: "Submit rebalancing transaction to SentinelHook"
+      description: "Submit rebalancing transaction to SentinelHook for this specific pool"
 
-  # ===================================================================
-  # STEP 5: Post-Execution Monitoring
-  # ===================================================================
+    # ==========================================================================
+    # STEP 7: Post-Execution Monitoring
+    # ==========================================================================
     - name: monitor_execution
       type: event_listener
       events:
         - contract: "${contracts.sentinelHook}"
           event: "LiquidityRebalanced"
-          timeout: 300 # 5 minutes
-      description: "Wait for rebalancing confirmation"
+          abi:
+            - "event LiquidityRebalanced(bytes32 indexed poolId, int24 newTickLower, int24 newTickUpper, uint256 activeAmount, int256 idleAmount)"
+          filter:
+            poolId: "${newRange.poolId}"
+          timeout: 300  # 5 minutes
+      description: "Wait for rebalancing confirmation event"
 
+    # ==========================================================================
+    # STEP 8: Log Metrics for Analytics
+    # ==========================================================================
     - name: log_metrics
       type: webhook
       url: "${env.METRICS_WEBHOOK_URL}"
       method: POST
       body:
         timestamp: "${block.timestamp}"
-        txHash: "${execute_rebalance.txHash}"
+        blockNumber: "${block.number}"
+        poolId: "${newRange.poolId}"
+        previousRange:
+          tickLower: "${poolState.activeTickLower}"
+          tickUpper: "${poolState.activeTickUpper}"
         newRange:
-          tickLower: "${newRange.tickLower}"
-          tickUpper: "${newRange.tickUpper}"
+          tickLower: "${newRange.newTickLower}"
+          tickUpper: "${newRange.newTickUpper}"
         volatility: "${newRange.volatility}"
-        gasUsed: "${execute_rebalance.gasUsed}"
-      description: "Log execution metrics for analytics"
+        riskLevel: "${volatilityAnalysis.riskLevel}"
+        consensusReached: "${report_consensus.approved}"
+        executionSuccess: "${monitor_execution.success}"
+      description: "Log rebalancing metrics to external analytics"
+      condition: "${monitor_execution.success == true}"
 
-# Security & Error Handling
-security:
-  max_gas_price: 50000000000 # 50 gwei max
-  retry_policy:
-    max_attempts: 3
-    backoff: exponential
-  circuit_breaker:
-    enabled: true
-    conditions:
-      - type: price_deviation
-        threshold: 10 # 10% deviation triggers circuit breaker
-      - type: gas_spike
-        threshold: 200 # 200% above average
+# ==============================================================================
+# SECONDARY WORKFLOW: SCHEDULED YIELD OPTIMIZATION
+# ==============================================================================
+yield_optimization:
+  name: sentinel-yield-optimizer
+  description: Periodic optimization of Active/Idle split across all pools
+  
+  trigger:
+    type: cron
+    schedule: "0 */6 * * *"  # Every 6 hours
+    description: "Regular yield optimization check"
 
-# Monitoring & Alerts
-monitoring:
-  alerts:
-    - name: rebalance_success
-      condition: "${execute_rebalance.success == true}"
-      channel: slack
-      message: "✅ Sentinel: Liquidity rebalanced successfully"
-    
-    - name: rebalance_failure
-      condition: "${execute_rebalance.success == false}"
-      channel: pagerduty
-      severity: high
-      message: "🚨 Sentinel: Rebalancing failed - manual intervention required"
-    
-    - name: high_volatility
-      condition: "${volatilityStrategy.riskLevel == 'high'}"
-      channel: slack
-      message: "⚠️ Sentinel: High market volatility detected (${volatilityStrategy.volatilityBps} bps)"
+  steps:
+    - name: get_all_pools
+      type: read_contract
+      contract: "${contracts.sentinelHook}"
+      function: "getRegisteredPools"
+      output: registeredPools
+      description: "Get list of all pools managed by Sentinel"
 
-# Documentation References
-documentation:
-  - title: "Sentinel Architecture"
-    url: "https://github.com/sentinel-protocol/docs/architecture.md"
-  - title: "Uniswap v4 Hooks"
-    url: "https://docs.uniswap.org/contracts/v4/concepts/hooks"
-  - title: "Chainlink CRE"
-    url: "https://docs.chain.link/chainlink-automation"
+    - name: check_each_pool
+      type: loop
+      over: "${registeredPools}"
+      as: poolId
+      steps:
+        - name: get_pool_tvl
+          type: read_contract
+          contract: "${contracts.sentinelHook}"
+          function: "getTotalValueLocked"
+          args:
+            poolId: "${poolId}"
+          output: poolTVL
+
+        - name: get_aave_apy
+          type: http_request
+          method: GET
+          url: "https://api.aave.com/v3/markets/${network.chainId}"
+          output: aaveData
+
+        - name: calculate_gas_breakeven
+          type: compute
+          language: javascript
+          code: |
+            // Calculate if rebalancing is worth the gas cost
+            const tvl = poolTVL.value;
+            const currentApy = aaveData.pools.find(p => p.asset == poolState.yieldCurrency)?.apy || 0;
+            const estimatedGasCost = 0.01;  // ~$10 in ETH
+            const daysToBreakeven = estimatedGasCost / (tvl * currentApy / 365);
+            
+            return {
+              shouldOptimize: daysToBreakeven < 1,  // Only if breakeven < 1 day
+              estimatedApy: currentApy,
+              tvl
+            };
+          output: gasAnalysis
+
+        - name: trigger_optimization
+          type: conditional_action
+          condition: "${gasAnalysis.shouldOptimize == true}"
+          action:
+            type: emit_event
+            event: "YieldOptimizationNeeded"
+            args:
+              poolId: "${poolId}"
+              reason: "APY improved"
+
+# ==============================================================================
+# LP EVENT MONITORING (Informational - No Actions)
+# ==============================================================================
+lp_monitoring:
+  name: sentinel-lp-monitor
+  description: Monitor LP deposit/withdrawal events for analytics
+  
+  events:
+    - name: lp_deposit
+      contract: "${contracts.sentinelHook}"
+      event: "LPDeposited"
+      abi:
+        - "event LPDeposited(bytes32 indexed poolId, address indexed lp, uint256 amount0, uint256 amount1, uint256 shares)"
+      action:
+        type: webhook
+        url: "${env.ANALYTICS_WEBHOOK_URL}"
+        body:
+          eventType: "deposit"
+          poolId: "${event.poolId}"
+          lp: "${event.lp}"
+          amount0: "${event.amount0}"
+          amount1: "${event.amount1}"
+          shares: "${event.shares}"
+          timestamp: "${block.timestamp}"
+
+    - name: lp_withdraw
+      contract: "${contracts.sentinelHook}"
+      event: "LPWithdrawn"
+      abi:
+        - "event LPWithdrawn(bytes32 indexed poolId, address indexed lp, uint256 amount0, uint256 amount1, uint256 shares)"
+      action:
+        type: webhook
+        url: "${env.ANALYTICS_WEBHOOK_URL}"
+        body:
+          eventType: "withdrawal"
+          poolId: "${event.poolId}"
+          lp: "${event.lp}"
+          amount0: "${event.amount0}"
+          amount1: "${event.amount1}"
+          shares: "${event.shares}"
+          timestamp: "${block.timestamp}"
+
+# ==============================================================================
+# ENVIRONMENT VARIABLES (Set in CRE Dashboard)
+# ==============================================================================
+environment:
+  METRICS_WEBHOOK_URL: ""      # Analytics endpoint for rebalancing metrics
+  ANALYTICS_WEBHOOK_URL: ""    # Analytics endpoint for LP events
+  COINGECKO_API_KEY: ""        # Optional: for higher rate limits

@@ -1,93 +1,297 @@
 # 🛡️ Sentinel Liquidity Protocol
 
-**Trust-Minimized Agentic Liquidity Management for Uniswap v4**
+**Trust-Minimized Agentic Liquidity Management as a Service for Uniswap v4**
 
 ---
 
-## 💡 The Pitch
+## 💡 The Problem
 
-Agents are smart, but they hallucinate. Smart Contracts are safe, but they are dumb.
+Traditional liquidity provision on Uniswap requires constant monitoring and rebalancing. LPs face:
+- **Impermanent Loss:** Price movements outside their range mean zero fee income
+- **Active Management:** Manual rebalancing is time-consuming and gas-intensive
+- **Idle Capital:** Out-of-range liquidity earns nothing
+- **Trust Issues:** Existing "LP management" solutions require trusting a centralized bot
 
-The **Sentinel Liquidity Protocol** is a hybrid architecture that combines the best of both worlds. It uses the **Chainlink Runtime Environment (CRE)** to perform complex market analysis (Volatility, LVR, Yield Shopping) and an immutable on-chain **Uniswap v4 Hook** (The Sentinel) to enforce safety guardrails.
+## 🎯 The Solution
 
-**Key Innovation:** Unlike standard LPs that leave capital sitting idle when out of range, Sentinel automatically identifies "excess" liquidity and routes it to **Aave v3** to earn lending yield, creating a "Super-LP" position.
+**Sentinel Liquidity Protocol** is a **Liquidity Management as a Service (LMaaS)** platform built on Uniswap v4 Hooks. LPs deposit tokens, receive shares, and Sentinel autonomously manages their positions across **any supported pool**.
 
----
+### Key Innovation
 
-## 🏗️ Architecture
-
-The system operates on two distinct paths to optimize for gas and safety.
-
-*   **Hot Path (User Swaps)**
-    *   **Goal:** Low latency, low gas.
-    *   **Action:** The Hook acts as a lightweight Guardian.
-    *   **Logic:** Checks Oracle Price Deviation (Circuit Breaker) and emits `TickCrossed` events. No complex math.
-
-*   **Cold Path (Chainlink CRE Workflows)**
-    *   **Goal:** Maximum profit, complex strategy.
-    *   **Action:** A Decentralized Oracle Network (DON) analyzes the signal and executes `maintain()`.
-    *   **Logic:** Calculates "Fear Gauge" (Volatility) and executes rebalancing transaction only if consensus is reached.
+| Problem | Sentinel Solution |
+|---------|-------------------|
+| **Trust** | Hybrid architecture: Immutable Hook (safety) + Chainlink CRE (strategy) |
+| **Idle Capital** | Automatic routing to Aave v3 for lending yield |
+| **Multi-Pool** | Single hook contract serves unlimited pools |
+| **Gas Efficiency** | Shared infrastructure reduces per-LP costs |
 
 ---
 
-## 📂 Project Structure & Documentation
+## 🏗️ Architecture Overview
 
-We have specialized documentation for different parts of the system:
+```mermaid
+graph TD
+    subgraph "LPs (Users)"
+        LP1[LP 1]
+        LP2[LP 2]
+        LP3[LP N...]
+    end
+    
+    subgraph "SentinelHook (One Contract)"
+        Hook[Multi-Pool Hook]
+        States[(Per-Pool State)]
+        Shares[(LP Shares)]
+    end
+    
+    subgraph "Uniswap v4 Pools"
+        Pool1[ETH/USDC]
+        Pool2[WBTC/ETH]
+        Pool3[ARB/USDC]
+    end
+    
+    subgraph "External Protocols"
+        Aave[Aave v3 - Yield]
+        Oracle[Chainlink - Safety]
+        CRE[Chainlink CRE - Strategy]
+    end
+    
+    LP1 -->|Deposit| Hook
+    LP2 -->|Deposit| Hook
+    LP3 -->|Deposit| Hook
+    
+    Hook --> States
+    Hook --> Shares
+    
+    Hook <-->|Liquidity| Pool1
+    Hook <-->|Liquidity| Pool2
+    Hook <-->|Liquidity| Pool3
+    
+    Hook <-->|Yield| Aave
+    Hook <-->|Price Check| Oracle
+    CRE -->|maintain()| Hook
+```
 
-*   **[🤖 Agent Context (agents.md)](./agents.md)**: **START HERE.** The detailed architectural blueprint.
-*   **[🔗 Chainlink CRE Reference (docs/chainlink_cre.md)](./docs/chainlink_cre.md)**: How the off-chain "Brain" works.
-*   **[📚 Tech Stack (docs/tech_stack.md)](./docs/tech_stack.md)**: Details on Uniswap v4, Aave, and Foundry usage.
+### Two-Path Design
+
+#### 🔥 Hot Path (Every Swap)
+- **Trigger:** `beforeSwap` hook on all pools using Sentinel
+- **Gas Budget:** < 50,000 gas
+- **Logic:** Oracle price deviation check (circuit breaker)
+- **Output:** TickCrossed event if price moved outside range
+
+#### ❄️ Cold Path (CRE Rebalancing)
+- **Trigger:** TickCrossed event or scheduled interval
+- **Executor:** Chainlink CRE DON (decentralized)
+- **Logic:** Calculate optimal range, Active/Idle split, consensus
+- **Output:** `maintain()` transaction to rebalance
+
+---
+
+## 🔄 Asset Flow
+
+### LP Deposit Flow
+```
+1. LP approves tokens
+2. LP calls depositLiquidity(poolId, amount0, amount1)
+3. Hook calculates shares based on NAV
+4. LP receives shares, tokens held by Hook
+5. Next maintain() deploys tokens to pool + Aave
+```
+
+### Rebalancing Flow
+```
+1. Price moves outside active range
+2. beforeSwap emits TickCrossed event
+3. Chainlink CRE detects event
+4. DON nodes compute optimal new range
+5. 2/3 consensus reached
+6. CRE calls maintain(poolId, newRange, volatility)
+7. Hook: Withdraw old range → Calculate split → Deploy new range + Aave
+```
+
+### LP Withdrawal Flow
+```
+1. LP calls withdrawLiquidity(poolId, shares)
+2. Hook calculates proportional claim
+3. Withdraw from Aave (if needed)
+4. Withdraw from pool (proportional liquidity)
+5. Transfer tokens to LP, burn shares
+```
+
+---
+
+## 📂 Project Structure
 
 ```
 sentinel-protocol/
-├── contracts/                  # THE ON-CHAIN LAYER (Foundry)
-│   ├── src/
-│   │   ├── SentinelHook.sol       # The Main Hook
-│   │   ├── libraries/             # YieldRouter, AaveAdapter, OracleLib
-│   └── test/                      # Fork Tests (Safety First)
+├── src/                           # Smart Contracts
+│   ├── SentinelHook.sol          # Multi-pool hook (main contract)
+│   └── libraries/
+│       ├── OracleLib.sol         # Price deviation checks
+│       ├── YieldRouter.sol       # Active/Idle split calculations
+│       └── AaveAdapter.sol       # Aave v3 integration
 │
-├── workflows/                  # THE OFF-CHAIN LAYER (Chainlink CRE)
-│   └── SentinelWorkflow.yaml      # The "Brain" Logic
+├── test/                          # Foundry Tests
+│   └── SentinelIntegration.t.sol # Fork tests
 │
-└── docs/                       # SYSTEM DOCUMENTATION
-    ├── chainlink_cre.md
-    └── tech_stack.md
+├── script/                        # Deployment Scripts
+│   └── DeploySentinel.s.sol
+│
+├── workflows/                     # Chainlink CRE
+│   └── sentinel-workflow.yaml    # Multi-pool orchestration
+│
+├── docs/                          # Documentation
+│   ├── chainlink_cre.md          # CRE reference
+│   └── tech_stack.md             # Technology details
+│
+├── agents.md                      # AI Agent context (START HERE)
+├── VISUAL_GUIDE.md               # Diagrams and flows
+└── README.md                      # This file
 ```
 
 ---
 
-## 🚀 Setup & Installation
+## 🚀 Getting Started
 
-**Prerequisites**
-*   Foundry (`forge`, `cast`)
+### Prerequisites
+- [Foundry](https://book.getfoundry.sh/getting-started/installation) (`forge`, `cast`, `anvil`)
+- Node.js 18+ (for frontend, optional)
+- Base RPC URL (Alchemy/Infura)
 
-### 1. Contracts Setup
+### Installation
 
 ```bash
-cd contracts
+# Clone the repository
+git clone https://github.com/your-org/sentinel-protocol.git
+cd sentinel-protocol
+
+# Install dependencies
 forge install
+
+# Build contracts
 forge build
-# Run the fork test to see the Aave integration in action
-forge test --match-path test/Integration.t.sol -vvv
 ```
 
-### 2. Off-Chain Setup (Chainlink CRE)
+### Running Tests
 
-The off-chain component runs on the Chainlink Platform.
-See **[docs/chainlink_cre.md](./docs/chainlink_cre.md)** for workflow deployment instructions.
+```bash
+# Unit tests
+forge test
+
+# Fork tests (required for integration)
+forge test --fork-url $BASE_RPC_URL -vvv
+
+# Gas report
+forge test --gas-report
+```
+
+### Deployment
+
+```bash
+# Deploy to Base testnet
+forge script script/DeploySentinel.s.sol --rpc-url $BASE_TESTNET_RPC --broadcast
+
+# Verify on Basescan
+forge verify-contract <ADDRESS> SentinelHook --chain base
+```
+
+---
+
+## 🔌 Supported Pools
+
+Sentinel can manage ANY Uniswap v4 pool that:
+1. ✅ Has the SentinelHook attached at initialization
+2. ✅ Has at least one token supported by Aave v3
+3. ✅ Has a corresponding Chainlink price feed
+
+### Example Configurations
+
+| Pool | Yield Currency | Oracle | Risk Profile |
+|------|----------------|--------|--------------|
+| ETH/USDC | USDC | ETH/USD | Blue chip |
+| WBTC/ETH | ETH | BTC/ETH | High volatility |
+| ARB/USDC | USDC | ARB/USD | L2 native |
+| stETH/ETH | ETH | stETH/ETH | LST arbitrage |
+
+---
+
+## 🛡️ Security Model
+
+### Trust Hierarchy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Level 1: Smart Contract (Immutable)                        │
+│ ├── Oracle deviation checks (circuit breaker)              │
+│ ├── LP share accounting (proportional claims only)         │
+│ └── Range validation (min/max bounds)                      │
+├─────────────────────────────────────────────────────────────┤
+│ Level 2: Chainlink CRE (Decentralized)                     │
+│ ├── 2/3 DON consensus required                             │
+│ ├── Cryptographically verified execution                   │
+│ └── No single point of failure                             │
+├─────────────────────────────────────────────────────────────┤
+│ Level 3: Strategy Parameters (Configurable)                │
+│ ├── Volatility thresholds                                  │
+│ ├── Range width bounds                                     │
+│ └── Yield protocol selection                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### What the CRE CAN'T Do
+- ❌ Withdraw LP funds (only LPs can withdraw their shares)
+- ❌ Bypass oracle checks (enforced in immutable Hook code)
+- ❌ Set invalid ranges (Hook validates all parameters)
+- ❌ Act without consensus (2/3 DON agreement required)
 
 ---
 
 ## 🏆 Hackathon Track: Agentic Finance
 
 This project addresses the track criteria by:
-- **Reliability:** Using the Hook as a hard "Circuit Breaker" ensures the Agent cannot drain funds.
-- **Composability:** Deeply integrating Uniswap v4 with lending protocols (Aave).
-- **Decentralization:** Replacing centralized bots with the **Chainlink Runtime Environment (CRE)**.
+
+| Criterion | Implementation |
+|-----------|----------------|
+| **Reliability** | Hook acts as hard "circuit breaker" - agents can't drain funds |
+| **Composability** | Deep Uniswap v4 + Aave v3 + Chainlink integration |
+| **Decentralization** | CRE replaces centralized bots with DON consensus |
+| **Innovation** | First multi-pool LP management service on v4 |
 
 ---
 
-## 🤖 For AI Agents & Builders
+## 📚 Documentation
 
-If you are an LLM (Cursor, Copilot, Windsurf) or a developer building on top of this:
-**[👉 READ THE AGENT CONTEXT (agents.md)](./agents.md)**
+| Document | Purpose |
+|----------|---------|
+| **[agents.md](./agents.md)** | 🤖 AI Agent context - START HERE |
+| **[VISUAL_GUIDE.md](./VISUAL_GUIDE.md)** | 📊 Diagrams and flow charts |
+| **[docs/chainlink_cre.md](./docs/chainlink_cre.md)** | 🔗 CRE workflow reference |
+| **[docs/tech_stack.md](./docs/tech_stack.md)** | 📚 Technology deep dive |
+
+---
+
+## 🤝 Contributing
+
+1. Read [agents.md](./agents.md) for architectural context
+2. Follow the Golden Rules for code changes
+3. All PRs must include fork tests
+4. Run `forge fmt` before committing
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](./LICENSE) for details.
+
+---
+
+## 🔗 Links
+
+- **Uniswap v4 Docs:** [docs.uniswap.org/contracts/v4](https://docs.uniswap.org/contracts/v4/overview)
+- **Aave v3 Docs:** [aave.com/docs/aave-v3](https://aave.com/docs/aave-v3/overview)
+- **Chainlink CRE:** [docs.chain.link](https://docs.chain.link/)
+- **Foundry Book:** [book.getfoundry.sh](https://book.getfoundry.sh/)
+
+---
+
+*Sentinel Liquidity Protocol - Autonomous Liquidity Management at Scale* 🛡️
