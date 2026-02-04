@@ -14,7 +14,10 @@ import {
     Currency,
     CurrencyLibrary
 } from "@uniswap/v4-core/src/types/Currency.sol";
-import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {
+    SwapParams,
+    ModifyLiquidityParams
+} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {
     AggregatorV3Interface
@@ -307,7 +310,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
 
         // Calculate liquidity value of the deposit in the CURRENT active range
-        (uint160 sqrtPriceX96, , , ) = poolManager.getSlot0(poolKey.toId());
+        (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(
+            poolManager,
+            poolKey.toId()
+        );
 
         uint160 sqrtRatioAX96 = TickMath.getSqrtPriceAtTick(activeTickLower);
         uint160 sqrtRatioBX96 = TickMath.getSqrtPriceAtTick(activeTickUpper);
@@ -546,7 +552,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // Calculate NAV
         // We need pool price. Estimating it via oracle or slot0?
         // Since getSharePrice is view, we can use slot0.
-        (uint160 sqrtPriceX96, , , ) = poolManager.getSlot0(poolKey.toId());
+        (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(
+            poolManager,
+            poolKey.toId()
+        );
         uint256 nav = _calculateTotalLiquidity(sqrtPriceX96);
 
         price = (nav * 1e18) / totalShares;
@@ -656,13 +665,16 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
         // 3. Deploy Max Liquidity to new Range
         // 3. Calculate Max Liquidity for new range with available tokens
-        (uint160 currentSqrtPrice, , , ) = poolManager.getSlot0(poolKey.toId());
+        (uint160 currentSqrtPrice, , , ) = StateLibrary.getSlot0(
+            poolManager,
+            poolKey.toId()
+        );
         uint160 sqrtRatioAX96 = TickMath.getSqrtPriceAtTick(newLower);
         uint160 sqrtRatioBX96 = TickMath.getSqrtPriceAtTick(newUpper);
 
         uint128 newLiquidity = LiquidityAmounts.getLiquidityForAmounts(
             currentSqrtPrice,
-            sqrtRatioAX996,
+            sqrtRatioAX96,
             sqrtRatioBX96,
             currency0.balanceOf(address(this)),
             currency1.balanceOf(address(this))
@@ -733,17 +745,14 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     ) internal returns (uint256 amount0, uint256 amount1) {
         if (liquidity == 0) return (0, 0);
 
-        IPoolManager.ModifyLiquidityParams memory params = IPoolManager
-            .ModifyLiquidityParams({
-                tickLower: activeTickLower,
-                tickUpper: activeTickUpper,
-                liquidityDelta: -int128(liquidity),
-                salt: 0
-            });
-
         (BalanceDelta delta, ) = poolManager.modifyLiquidity(
             poolKey,
-            params,
+            ModifyLiquidityParams({
+                tickLower: activeTickLower,
+                tickUpper: activeTickUpper,
+                liquidityDelta: -int256(int128(liquidity)),
+                salt: bytes32(0)
+            }),
             "" // hookData
         );
 
@@ -762,9 +771,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // - positive: pool receives (we pay).
 
         // Therefore, amount0 = uint256(-delta.amount0()).
-
-        amount0 = delta.amount0() < 0 ? uint256(-delta.amount0()) : 0;
-        amount1 = delta.amount1() < 0 ? uint256(-delta.amount1()) : 0;
+        int128 amt0 = delta.amount0();
+        int128 amt1 = delta.amount1();
+        amount0 = amt0 < 0 ? uint256(uint128(-amt0)) : 0;
+        amount1 = amt1 < 0 ? uint256(uint128(-amt1)) : 0;
     }
 
     /// @notice Deploys liquidity to new range
@@ -780,7 +790,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint256 amount1
     ) internal returns (uint128 activeLiquidityMinted) {
         // Calculate max liquidity we can mint with these amounts
-        (uint160 sqrtPriceX96, , , ) = poolManager.getSlot0(poolKey.toId());
+        (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(
+            poolManager,
+            poolKey.toId()
+        );
         uint160 sqrtRatioAX96 = TickMath.getSqrtPriceAtTick(tickLower);
         uint160 sqrtRatioBX96 = TickMath.getSqrtPriceAtTick(tickUpper);
 
@@ -793,17 +806,14 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         );
 
         if (activeLiquidityMinted > 0) {
-            IPoolManager.ModifyLiquidityParams memory params = IPoolManager
-                .ModifyLiquidityParams({
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    liquidityDelta: int128(activeLiquidityMinted),
-                    salt: 0
-                });
-
             (BalanceDelta delta, ) = poolManager.modifyLiquidity(
                 poolKey,
-                params,
+                ModifyLiquidityParams({
+                    tickLower: tickLower,
+                    tickUpper: tickUpper,
+                    liquidityDelta: int256(int128(activeLiquidityMinted)),
+                    salt: bytes32(0)
+                }),
                 ""
             );
 
