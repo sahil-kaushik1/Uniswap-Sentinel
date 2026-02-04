@@ -11,8 +11,10 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {AggregatorV3Interface} from "foundry-chainlink-toolkit/src/interfaces/feeds/AggregatorV3Interface.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
+import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
 /// @title SentinelIntegrationTest
 /// @notice Fork tests for the multi-pool Sentinel workflow
@@ -60,17 +62,24 @@ contract SentinelIntegrationTest is Test {
     PoolId linkUsdcPoolId;
 
     function setUp() public {
-        // Fork Sepolia if available, otherwise use mock
+        // Fork Sepolia (required for these integration tests)
         try vm.createSelectFork("sepolia") {
             console.log("Running on Sepolia fork");
         } catch {
-            console.log("No fork available, using mock mode");
+            vm.skip(true, "Sepolia fork not configured. Set SEPOLIA_RPC_URL to run fork tests.");
+            return;
         }
 
         owner = address(this);
 
-        // Deploy the multi-pool hook
-        hook = new SentinelHook(IPoolManager(POOL_MANAGER), AAVE_POOL, maintainer);
+        // Deploy the hook at a valid Uniswap v4 hook address (address encodes hook permission flags)
+        uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG);
+        bytes memory constructorArgs = abi.encode(IPoolManager(POOL_MANAGER), AAVE_POOL, maintainer);
+        (address expectedAddress, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(SentinelHook).creationCode, constructorArgs);
+
+        hook = new SentinelHook{salt: salt}(IPoolManager(POOL_MANAGER), AAVE_POOL, maintainer);
+        assertEq(address(hook), expectedAddress);
 
         console.log("Sentinel Hook deployed at:", address(hook));
 

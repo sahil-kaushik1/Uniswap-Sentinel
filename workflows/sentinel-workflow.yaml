@@ -1,4 +1,10 @@
-# Sentinel Multi-Pool Liquidity Manager - Chainlink CRE Workflow
+# DEPRECATED (gelato branch)
+# This file is the legacy Chainlink CRE workflow spec kept for reference.
+# The gelato branch uses Gelato Automate instead. See:
+# - workflows/gelato-automate.md
+# - docs/gelato_automate.md
+
+# Sentinel Multi-Pool Liquidity Manager - Chainlink CRE Workflow (legacy)
 # This workflow orchestrates automated liquidity rebalancing across ALL Uniswap v4 pools
 # that use the SentinelHook
 
@@ -386,7 +392,7 @@ lp_monitoring:
           timestamp: "${block.timestamp}"
 
 # ==============================================================================
-# ENVIRONMENT VARIABLES (Set in CRE Dashboard)
+# ENVIRONMENT VARIABLES (Legacy CRE workflow)
 # ==============================================================================
 environment:
   METRICS_WEBHOOK_URL: ""      # Analytics endpoint for rebalancing metrics

@@ -35,39 +35,30 @@ Hooks.Permissions({
 
 ---
 
-### 🔗 Chainlink Platform
+### ⚙️ Gelato Automate + 🔗 Chainlink Data Feeds
 
-**Role:** The Decentralized "Backend"
+**Role:** Automation Execution + Oracle Safety
 
-We rely on Chainlink for off-chain computation, data integrity, and trust-minimized execution.
+In the `gelato` branch, Sentinel uses:
+- **Gelato Automate** for scheduling/event-driven execution of `maintain()` (cold path)
+- **Chainlink Data Feeds** for oracle-based circuit breaking (hot path)
 
 #### Components Used
 
 | Component | Purpose | Sentinel Integration |
 |-----------|---------|---------------------|
-| **Chainlink Runtime Environment (CRE)** | Serverless workflow orchestration | Multi-pool `maintain()` triggers |
-| **Decentralized Oracle Networks (DONs)** | Consensus-based execution | 2/3 nodes must agree on rebalance |
+| **Gelato Automate** | Task execution network | Executes `maintain(poolId, ...)` via whitelisted executor |
+| **Dedicated msg.sender** | Safer caller whitelisting | Hook `maintainer` set to Gelato dedicated sender (recommended) |
 | **Chainlink Data Feeds** | Price oracles | Circuit breaker price validation |
 
-#### CRE Workflow Capabilities
-```yaml
-Triggers:
-  - TickCrossed(poolId, ticks)  # Event-driven per pool
-  - Cron: "0 */6 * * *"         # Scheduled health checks
+#### Automation Capabilities (high level)
+- **Triggers:** event-driven (e.g., `TickCrossed`) and/or cron/time
+- **Dynamic inputs:** resolver and/or Web3 Functions
+- **Security:** whitelist the executor via the hook’s `maintainer`
 
-Computation:
-  - Volatility calculation
-  - Optimal range determination
-  - Active/Idle ratio calculation
-
-Consensus:
-  - 2/3 DON nodes must agree
-  - Validated range bounds
-  - Gas-efficient execution
-```
-
-**Documentation:** 
-- [CRE Reference](./chainlink_cre.md)
+**Documentation:**
+- [Gelato Automate Reference](./gelato_automate.md)
+- [Gelato Docs](https://docs.gelato.cloud/)
 - [Chainlink Developer Hub](https://dev.chain.link/)
 - [Data Feeds (Base)](https://docs.chain.link/data-feeds/price-feeds/addresses?network=base)
 
@@ -263,7 +254,7 @@ struct PoolState {
 | Layer | Protection | Implementation |
 |-------|------------|----------------|
 | **Hot Path** | Oracle circuit breaker | `OracleLib.checkPriceDeviation()` |
-| **Cold Path** | DON consensus | 2/3 nodes must agree |
+| **Cold Path** | Whitelisted automation executor | `maintainer` gate (Gelato dedicated msg.sender recommended) |
 | **LP Funds** | Share-based accounting | Cannot withdraw more than owned |
 | **Reentrancy** | ReentrancyGuard | All external-facing functions |
 | **Access Control** | Role-based | `onlyMaintainer`, `onlyOwner` |

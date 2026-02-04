@@ -87,8 +87,8 @@ contract DeploySentinel is Script {
             aavePool = ANVIL_AAVE_POOL;
         }
 
-        // CRE Maintainer - deployer acts as maintainer initially
-        maintainer = vm.envOr("CRE_MAINTAINER", deployer);
+        // Automation executor (Gelato recommended) - deployer acts as maintainer initially
+        maintainer = vm.envOr("GELATO_EXECUTOR", deployer);
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -112,8 +112,8 @@ contract DeploySentinel is Script {
         console.log("\n=== Next Steps ===");
         console.log("1. Verify the hook contract on Etherscan (Sepolia)");
         console.log("2. Initialize pools with `initializePool()` function");
-        console.log("3. Configure Chainlink CRE maintainer address");
-        console.log("4. Deploy the Chainlink CRE workflow");
+        console.log("3. Configure Gelato Automate executor as maintainer (or keep deployer for manual testing)");
+        console.log("4. Create a Gelato Automate task to call maintain(poolId, ...)\n");
     }
 
     /// @notice Initialize an ETH/USDC pool with Sentinel management

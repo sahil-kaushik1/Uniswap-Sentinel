@@ -123,7 +123,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     /// @notice The Aave v3 Pool contract (shared across all pools)
     IPool public immutable aavePool;
 
-    /// @notice Address authorized to call maintain() (Chainlink CRE)
+    /// @notice Address authorized to call maintain() (Gelato Automate executor / dedicated msg.sender)
     address public maintainer;
 
     /// @notice Hook owner (for emergencies and pool initialization)
@@ -456,7 +456,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
                     COLD PATH: STRATEGY EXECUTION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Rebalances liquidity for a specific pool - ONLY callable by Chainlink CRE
+    /// @notice Rebalances liquidity for a specific pool - ONLY callable by the configured automation executor
     /// @param poolId The pool to rebalance
     /// @param newTickLower New lower tick
     /// @param newTickUpper New upper tick

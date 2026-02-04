@@ -1,4 +1,7 @@
-# Chainlink Runtime Environment (CRE) Reference
+# Chainlink Runtime Environment (CRE) Reference (Legacy)
+
+> DEPRECATED in the `gelato` branch: Sentinel uses **Gelato Automate** for the cold-path executor.
+> See `docs/gelato_automate.md`.
 
 ## Overview
 The **Chainlink Runtime Environment (CRE)** is an institutional-grade orchestration layer that replaces traditional off-chain bots with secure, decentralized workflows. In the Sentinel Liquidity Protocol, CRE acts as the **"Strategist"**, managing liquidity rebalancing and yield optimization across **multiple Uniswap v4 pools** without a single point of failure.

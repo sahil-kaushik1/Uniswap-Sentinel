@@ -8,7 +8,7 @@ This document is the **Source of Truth** for AI coding agents (Copilot, Cursor, 
 
 **Name:** Sentinel Liquidity Protocol  
 **Type:** Trust-Minimized Agentic Liquidity Management as a Service for Uniswap v4  
-**Core Mechanic:** Hybrid architecture combining an **Immutable Multi-Pool Hook** (Safety) with the **Chainlink Runtime Environment (CRE)** (Strategy)  
+**Core Mechanic:** Hybrid architecture combining an **Immutable Multi-Pool Hook** (Safety) with **Gelato Automate** (Execution)  
 **Value Proposition:** LPs deposit liquidity, and Sentinel autonomously manages their positions across ANY Uniswap v4 pool with the hook attached—optimizing range, maximizing yield, and minimizing impermanent loss.
 
 ---
@@ -29,7 +29,7 @@ This document is the **Source of Truth** for AI coding agents (Copilot, Cursor, 
 
 ### 2.3 Asset Flow Philosophy
 - **Dual-Bucket System:** Capital is split between Active (in-range Uniswap liquidity) and Idle (earning yield in Aave)
-- **Dynamic Rebalancing:** CRE adjusts the Active/Idle ratio based on volatility and market conditions
+- **Dynamic Rebalancing:** Automation adjusts the Active/Idle ratio based on volatility and market conditions
 - **Unified Yield Currency:** Each pool designates ONE token as the yield-generating asset (deposited to Aave)
 
 ---
@@ -55,7 +55,7 @@ graph TD
     subgraph "External Protocols"
         Aave[Aave v3 Lending]
         Oracle[Chainlink Oracles]
-        CRE[Chainlink CRE DON]
+        Gelato[Gelato Automate]
     end
     
     Pool1 -->|beforeSwap| Hook
@@ -67,8 +67,8 @@ graph TD
     Hook --> LPRegistry
     Hook <-->|Supply/Withdraw| Aave
     Hook <-->|Price Checks| Oracle
-    CRE -->|maintain(poolId)| Hook
-    Hook -->|Events| CRE
+    Gelato -->|maintain(poolId)| Hook
+    Hook -->|Events| Gelato
 ```
 
 ### 3.2 Per-Pool State Structure
@@ -107,10 +107,10 @@ flowchart TB
         Hook -->|4. Hold tokens| Contract[Hook Contract Balance]
     end
     
-    subgraph MAINTAIN ["CRE Maintain Cycle"]
-        CRE[Chainlink CRE] -->|1. Monitor TickCrossed| Events[Event Listener]
+    subgraph MAINTAIN ["Gelato Maintain Cycle"]
+        Gelato[Gelato Automate] -->|1. Monitor TickCrossed| Events[Event Listener]
         Events -->|2. Calculate strategy| Compute[Volatility Analysis]
-        Compute -->|3. DON Consensus| Consensus[2/3 Agreement]
+        Compute -->|3. Decide execution| Consensus[Resolver/Web3 Function]
         Consensus -->|4. maintain(poolId, range, vol)| MaintainCall[Hook.maintain]
     end
     
@@ -170,22 +170,22 @@ sequenceDiagram
     end
 ```
 
-### 3.5 Cold Path (CRE Rebalancing) - Complexity Allowed
+### 3.5 Cold Path (Gelato Rebalancing) - Complexity Allowed
 ```mermaid
 sequenceDiagram
-    participant CRE as Chainlink CRE DON
+    participant Gelato as Gelato Automate
     participant Hook as SentinelHook
     participant PM as PoolManager
     participant Aave as Aave v3
     participant YR as YieldRouter
     
-    Note over CRE: Triggered by TickCrossed event or schedule
+    Note over Gelato: Triggered by TickCrossed event or schedule
     
-    CRE->>CRE: Fetch market data (volatility, prices)
-    CRE->>CRE: Calculate optimal range
-    CRE->>CRE: DON Consensus (2/3 nodes agree)
+    Gelato->>Gelato: Fetch market data (volatility, prices)
+    Gelato->>Gelato: Calculate optimal range
+    Gelato->>Gelato: Resolver/Web3 Function determines execution
     
-    CRE->>Hook: maintain(poolId, newTickLower, newTickUpper, volatility)
+    Gelato->>Hook: maintain(poolId, newTickLower, newTickUpper, volatility)
     
     Hook->>Hook: Validate caller == maintainer
     Hook->>PM: unlock(maintainData)
@@ -273,7 +273,7 @@ lpShares[msg.sender] += shares;
 - Must be one of the pool's two tokens
 - aToken address must be configured at pool initialization
 
-### Rule 7: CRE Maintains One Pool at a Time
+### Rule 7: Automation Maintains One Pool at a Time
 ```solidity
 // The maintain function is pool-specific
 function maintain(
@@ -311,7 +311,7 @@ SentinelHook.sol
 │   ├── depositLiquidity(PoolId, amount0, amount1)
 │   └── withdrawLiquidity(PoolId, shares)
 │
-├── CRE Interface  
+├── Automation Interface  
 │   └── maintain(PoolId, tickLower, tickUpper, volatility)
 │
 ├── View Functions
@@ -336,7 +336,7 @@ SentinelHook.sol
 | `YieldRouter.sol` | Calculate Active/Idle split ratios | Yes - stateless math |
 | `AaveAdapter.sol` | Supply/withdraw from Aave v3 | Yes - accepts asset address |
 
-### 5.3 Event Architecture (CRE Consumption)
+### 5.3 Event Architecture (Automation Consumption)
 ```solidity
 // Pool lifecycle
 event PoolInitialized(PoolId indexed poolId, address priceFeed, Currency yieldCurrency);
@@ -345,7 +345,7 @@ event PoolInitialized(PoolId indexed poolId, address priceFeed, Currency yieldCu
 event LPDeposited(PoolId indexed poolId, address indexed lp, uint256 amount0, uint256 amount1, uint256 shares);
 event LPWithdrawn(PoolId indexed poolId, address indexed lp, uint256 amount0, uint256 amount1, uint256 shares);
 
-// Strategy events (CRE listens to these)
+// Strategy events (automation listens to these)
 event TickCrossed(PoolId indexed poolId, int24 tickLower, int24 tickUpper, int24 currentTick);
 event LiquidityRebalanced(PoolId indexed poolId, int24 newTickLower, int24 newTickUpper, uint256 activeAmount, int256 idleAmount);
 
@@ -369,7 +369,7 @@ event IdleCapitalWithdrawn(PoolId indexed poolId, address yieldProtocol, uint256
 ### Workflows (`/workflows`)
 | File | Role | Key Functionality |
 |------|------|-------------------|
-| `sentinel-workflow.yaml` | **CRE Orchestration** | Multi-pool monitoring, per-pool maintain triggers |
+| `gelato-automate.md` | **Gelato Automate** | Task/resolver notes for per-pool maintain triggers |
 
 ### Tests (`/test`)
 | File | Role | Coverage |
@@ -397,7 +397,7 @@ Sentinel can manage ANY Uniswap v4 pool that:
 
 ## 8. External Resources & Documentation
 
-- **Chainlink CRE Reference:** [docs/chainlink_cre.md](./docs/chainlink_cre.md)
+- **Gelato Automate Reference:** [docs/gelato_automate.md](./docs/gelato_automate.md)
 - **Tech Stack Details:** [docs/tech_stack.md](./docs/tech_stack.md)
 - **Visual Guide:** [VISUAL_GUIDE.md](./VISUAL_GUIDE.md)
 - **Uniswap v4 Docs:** [https://docs.uniswap.org/contracts/v4/overview](https://docs.uniswap.org/contracts/v4/overview)

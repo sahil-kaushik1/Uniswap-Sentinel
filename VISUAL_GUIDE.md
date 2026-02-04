@@ -31,7 +31,7 @@
 │  │ HOT PATH            │  │ COLD PATH           │  │ LP INTERFACE            │  │
 │  │ (beforeSwap)        │  │ (maintain)          │  │                         │  │
 │  │                     │  │                     │  │ depositLiquidity(       │  │
-│  │ • Oracle Check      │  │ • CRE Only          │  │   poolId, amt0, amt1)   │  │
+│  │ • Oracle Check      │  │ • Gelato Only       │  │   poolId, amt0, amt1)   │  │
 │  │ • Emit TickCrossed  │  │ • Rebalance Range   │  │                         │  │
 │  │ • <50k gas          │  │ • Aave Deposit/     │  │ withdrawLiquidity(      │  │
 │  │                     │  │   Withdraw          │  │   poolId, shares)       │  │
@@ -46,7 +46,7 @@
     │ PoolManager     │     │ Lending Pool    │         │ Platform        │
     │                 │     │                 │         │                 │
     │ • modifyLiq     │     │ • supply()      │         │ • Data Feeds    │
-    │ • getSlot0      │     │ • withdraw()    │         │ • CRE DON       │
+    │ • getSlot0      │     │ • withdraw()    │         │ • Gelato Automate│
     └─────────────────┘     └─────────────────┘         └─────────────────┘
 ```
 
@@ -172,11 +172,11 @@
 
 ---
 
-## Cold Path Flow (CRE Multi-Pool Rebalancing)
+## Cold Path Flow (Gelato Multi-Pool Rebalancing)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                          CHAINLINK CRE DON                                      │
+│                          GELATO AUTOMATE EXECUTOR                               │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │  Event Monitor: Listening to ALL pools using SentinelHook                       │
@@ -400,7 +400,7 @@ Block    Event                           Pool        Parameters
 │  │  ✓ Range bounds validated (min/max tick width)                          │    │
 │  │  ✓ Reentrancy protection on all external functions                      │    │
 │  │                                                                          │    │
-│  │  CRE CANNOT bypass these checks                                          │    │
+│  │  GELATO CANNOT bypass these checks                                       │    │
 │  │  Owner CANNOT bypass these checks                                        │    │
 │  └─────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                  │

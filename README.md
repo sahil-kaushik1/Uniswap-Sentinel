@@ -20,7 +20,7 @@ Traditional liquidity provision on Uniswap requires constant monitoring and reba
 
 | Problem | Sentinel Solution |
 |---------|-------------------|
-| **Trust** | Hybrid architecture: Immutable Hook (safety) + Chainlink CRE (strategy) |
+| **Trust** | Hybrid architecture: Immutable Hook (safety) + Gelato Automate (execution) |
 | **Idle Capital** | Automatic routing to Aave v3 for lending yield |
 | **Multi-Pool** | Single hook contract serves unlimited pools |
 | **Gas Efficiency** | Shared infrastructure reduces per-LP costs |
@@ -52,7 +52,7 @@ graph TD
     subgraph "External Protocols"
         Aave[Aave v3 - Yield]
         Oracle[Chainlink - Safety]
-        CRE[Chainlink CRE - Strategy]
+        Gelato[Gelato Automate - Execution]
     end
     
     LP1 -->|Deposit| Hook
@@ -68,7 +68,7 @@ graph TD
     
     Hook <-->|Yield| Aave
     Hook <-->|Price Check| Oracle
-    CRE -->|maintain()| Hook
+    Gelato -->|maintain()| Hook
 ```
 
 ### Two-Path Design
@@ -79,10 +79,10 @@ graph TD
 - **Logic:** Oracle price deviation check (circuit breaker)
 - **Output:** TickCrossed event if price moved outside range
 
-#### ❄️ Cold Path (CRE Rebalancing)
+#### ❄️ Cold Path (Gelato Rebalancing)
 - **Trigger:** TickCrossed event or scheduled interval
-- **Executor:** Chainlink CRE DON (decentralized)
-- **Logic:** Calculate optimal range, Active/Idle split, consensus
+- **Executor:** Gelato Automate (dedicated msg.sender recommended)
+- **Logic:** Calculate optimal range and Active/Idle split off-chain, then execute `maintain()`
 - **Output:** `maintain()` transaction to rebalance
 
 ---
@@ -102,10 +102,9 @@ graph TD
 ```
 1. Price moves outside active range
 2. beforeSwap emits TickCrossed event
-3. Chainlink CRE detects event
-4. DON nodes compute optimal new range
-5. 2/3 consensus reached
-6. CRE calls maintain(poolId, newRange, volatility)
+3. Gelato Automate detects event (or cron)
+4. Strategy computes optimal new range
+5. Gelato calls maintain(poolId, newRange, volatility)
 7. Hook: Withdraw old range → Calculate split → Deploy new range + Aave
 ```
 
@@ -137,11 +136,11 @@ sentinel-protocol/
 ├── script/                        # Deployment Scripts
 │   └── DeploySentinel.s.sol
 │
-├── workflows/                     # Chainlink CRE
-│   └── sentinel-workflow.yaml    # Multi-pool orchestration
+├── workflows/                     # Gelato Automate
+│   └── gelato-automate.md        # Task/resolver notes
 │
 ├── docs/                          # Documentation
-│   ├── chainlink_cre.md          # CRE reference
+│   ├── gelato_automate.md        # Gelato Automate reference
 │   └── tech_stack.md             # Technology details
 │
 ├── agents.md                      # AI Agent context (START HERE)
@@ -226,10 +225,10 @@ Sentinel can manage ANY Uniswap v4 pool that:
 │ ├── LP share accounting (proportional claims only)         │
 │ └── Range validation (min/max bounds)                      │
 ├─────────────────────────────────────────────────────────────┤
-│ Level 2: Chainlink CRE (Decentralized)                     │
-│ ├── 2/3 DON consensus required                             │
-│ ├── Cryptographically verified execution                   │
-│ └── No single point of failure                             │
+│ Level 2: Gelato Automate (Execution)                       │
+│ ├── Whitelisted executor (dedicated msg.sender recommended)│
+│ ├── Event/cron driven execution                             │
+│ └── No custody of LP funds                                  │
 ├─────────────────────────────────────────────────────────────┤
 │ Level 3: Strategy Parameters (Configurable)                │
 │ ├── Volatility thresholds                                  │
@@ -238,11 +237,11 @@ Sentinel can manage ANY Uniswap v4 pool that:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### What the CRE CAN'T Do
+### What automation CAN'T Do
 - ❌ Withdraw LP funds (only LPs can withdraw their shares)
 - ❌ Bypass oracle checks (enforced in immutable Hook code)
 - ❌ Set invalid ranges (Hook validates all parameters)
-- ❌ Act without consensus (2/3 DON agreement required)
+- ❌ Bypass the `maintainer` gate (only the configured executor can call `maintain()`)
 
 ---
 
@@ -254,7 +253,7 @@ This project addresses the track criteria by:
 |-----------|----------------|
 | **Reliability** | Hook acts as hard "circuit breaker" - agents can't drain funds |
 | **Composability** | Deep Uniswap v4 + Aave v3 + Chainlink integration |
-| **Decentralization** | CRE replaces centralized bots with DON consensus |
+| **Decentralization** | Automation execution via Gelato network; safety enforced on-chain |
 | **Innovation** | First multi-pool LP management service on v4 |
 
 ---
@@ -265,7 +264,7 @@ This project addresses the track criteria by:
 |----------|---------|
 | **[agents.md](./agents.md)** | 🤖 AI Agent context - START HERE |
 | **[VISUAL_GUIDE.md](./VISUAL_GUIDE.md)** | 📊 Diagrams and flow charts |
-| **[docs/chainlink_cre.md](./docs/chainlink_cre.md)** | 🔗 CRE workflow reference |
+| **[docs/gelato_automate.md](./docs/gelato_automate.md)** | ⚙️ Gelato Automate reference |
 | **[docs/tech_stack.md](./docs/tech_stack.md)** | 📚 Technology deep dive |
 
 ---
@@ -289,7 +288,7 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 - **Uniswap v4 Docs:** [docs.uniswap.org/contracts/v4](https://docs.uniswap.org/contracts/v4/overview)
 - **Aave v3 Docs:** [aave.com/docs/aave-v3](https://aave.com/docs/aave-v3/overview)
-- **Chainlink CRE:** [docs.chain.link](https://docs.chain.link/)
+- **Gelato Automate:** [docs.gelato.cloud](https://docs.gelato.cloud/)
 - **Foundry Book:** [book.getfoundry.sh](https://book.getfoundry.sh/)
 
 ---
