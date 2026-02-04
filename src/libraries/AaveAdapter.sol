@@ -12,31 +12,19 @@ interface IPool {
     /// @param amount The amount to be supplied
     /// @param onBehalfOf The address that will receive the aTokens
     /// @param referralCode Code used to register the integrator originating the operation (0 if none)
-    function supply(
-        address asset,
-        uint256 amount,
-        address onBehalfOf,
-        uint16 referralCode
-    ) external;
+    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
 
     /// @notice Withdraws an asset from the lending pool
     /// @param asset The address of the underlying asset to withdraw
     /// @param amount The amount to be withdrawn (type(uint256).max for full balance)
     /// @param to Address that will receive the withdrawn asset
     /// @return The final amount withdrawn
-    function withdraw(
-        address asset,
-        uint256 amount,
-        address to
-    ) external returns (uint256);
+    function withdraw(address asset, uint256 amount, address to) external returns (uint256);
 
     /// @notice Returns the normalized income of the reserve
     /// @param asset The address of the underlying asset
     /// @return The reserve's normalized income (liquidity index)
-    function getReserveNormalizedIncome(address asset)
-        external
-        view
-        returns (uint256);
+    function getReserveNormalizedIncome(address asset) external view returns (uint256);
 }
 
 /// @notice Aave aToken interface (interest-bearing token)
@@ -62,12 +50,7 @@ library AaveAdapter {
     /// @param asset The token to deposit
     /// @param amount The amount to deposit
     /// @param recipient The address that will receive the aTokens
-    function depositToAave(
-        IPool pool,
-        address asset,
-        uint256 amount,
-        address recipient
-    ) internal {
+    function depositToAave(IPool pool, address asset, uint256 amount, address recipient) internal {
         require(amount > 0, "Amount must be greater than 0");
 
         // Approve Aave pool to spend tokens
@@ -75,8 +58,9 @@ library AaveAdapter {
 
         // Supply to Aave (referralCode = 0 as per Aave docs)
         try pool.supply(asset, amount, recipient, 0) {
-            // Success
-        } catch {
+        // Success
+        }
+        catch {
             revert AaveDepositFailed();
         }
     }
@@ -87,12 +71,10 @@ library AaveAdapter {
     /// @param amount The amount to withdraw (use type(uint256).max for full balance)
     /// @param recipient The address that will receive the tokens
     /// @return withdrawn The actual amount withdrawn
-    function withdrawFromAave(
-        IPool pool,
-        address asset,
-        uint256 amount,
-        address recipient
-    ) internal returns (uint256 withdrawn) {
+    function withdrawFromAave(IPool pool, address asset, uint256 amount, address recipient)
+        internal
+        returns (uint256 withdrawn)
+    {
         require(amount > 0, "Amount must be greater than 0");
 
         try pool.withdraw(asset, amount, recipient) returns (uint256 withdrawnAmount) {
@@ -106,11 +88,7 @@ library AaveAdapter {
     /// @param aToken The aToken address
     /// @param user The user address
     /// @return balance The current balance including interest
-    function getAaveBalance(address aToken, address user)
-        internal
-        view
-        returns (uint256 balance)
-    {
+    function getAaveBalance(address aToken, address user) internal view returns (uint256 balance) {
         balance = IERC20(aToken).balanceOf(user);
     }
 
@@ -119,13 +97,13 @@ library AaveAdapter {
     /// @param user The user address
     /// @param initialDeposit The original deposit amount
     /// @return yield The amount of yield earned
-    function calculateAccruedYield(
-        address aToken,
-        address user,
-        uint256 initialDeposit
-    ) internal view returns (uint256 yield) {
+    function calculateAccruedYield(address aToken, address user, uint256 initialDeposit)
+        internal
+        view
+        returns (uint256 yield)
+    {
         uint256 currentBalance = getAaveBalance(aToken, user);
-        
+
         if (currentBalance > initialDeposit) {
             yield = currentBalance - initialDeposit;
         } else {
@@ -138,11 +116,7 @@ library AaveAdapter {
     /// @param asset The token to withdraw
     /// @param recipient The address that will receive the tokens
     /// @return withdrawn The actual amount withdrawn
-    function emergencyWithdrawAll(
-        IPool pool,
-        address asset,
-        address recipient
-    ) internal returns (uint256 withdrawn) {
+    function emergencyWithdrawAll(IPool pool, address asset, address recipient) internal returns (uint256 withdrawn) {
         // Using type(uint256).max withdraws the entire balance
         try pool.withdraw(asset, type(uint256).max, recipient) returns (uint256 withdrawnAmount) {
             withdrawn = withdrawnAmount;
@@ -157,11 +131,7 @@ library AaveAdapter {
     /// @param pool The Aave pool address
     /// @param asset The asset to check
     /// @return isHealthy True if the pool is accepting deposits
-    function isPoolHealthy(IPool pool, address asset)
-        internal
-        view
-        returns (bool isHealthy)
-    {
+    function isPoolHealthy(IPool pool, address asset) internal view returns (bool isHealthy) {
         try pool.getReserveNormalizedIncome(asset) returns (uint256 income) {
             // If we can get normalized income and it's greater than 0, pool is operational
             isHealthy = income > 0;

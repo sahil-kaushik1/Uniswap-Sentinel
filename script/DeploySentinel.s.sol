@@ -4,87 +4,192 @@ pragma solidity ^0.8.24;
 import {Script, console} from "forge-std/Script.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {SentinelHook} from "../src/SentinelHook.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 /// @title DeploySentinel
-/// @notice Deployment script for Sentinel Hook on Base network
-/// @dev This script deploys the hook and initializes a pool
+/// @notice Multi-Pool Deployment script for Sentinel Hook
+/// @dev Supports ETH Sepolia testnet and Anvil local development
 contract DeploySentinel is Script {
-    // Base Mainnet addresses
-    address constant POOL_MANAGER = 0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865; // Uniswap v4 PoolManager on Base
+    using PoolIdLibrary for PoolKey;
 
-    // Chainlink Price Feeds on Base
-    address constant ETH_USD_FEED = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70; // ETH/USD on Base
-    address constant USDC_USD_FEED = 0x7e860098F58bBFC8648a4311b374B1D669a2bc6B; // USDC/USD on Base
+    /*//////////////////////////////////////////////////////////////
+                        SEPOLIA ADDRESSES
+    //////////////////////////////////////////////////////////////*/
 
-    // Aave v3 on Base
-    address constant AAVE_POOL = 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5; // Aave v3 Pool on Base
-    address constant AUSDC = 0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB; // aUSDC on Base
+    // Uniswap v4 on Sepolia
+    address constant SEPOLIA_POOL_MANAGER = 0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A;
 
-    // Tokens on Base
-    address constant WETH = 0x4200000000000000000000000000000000000006; // WETH on Base
-    address constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // USDC on Base
+    // Chainlink Price Feeds on Sepolia
+    address constant SEPOLIA_ETH_USD_FEED = 0x694AA1769357215DE4FAC081bf1f309aDC325306;
+    address constant SEPOLIA_USDC_USD_FEED = 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E;
+    address constant SEPOLIA_BTC_USD_FEED = 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43;
+    address constant SEPOLIA_LINK_USD_FEED = 0xc59E3633BAAC79493d908e63626716e204A45EdF;
 
-    // Chainlink CRE Maintainer address (will be updated with actual CRE address)
-    address constant CRE_MAINTAINER = address(0x0); // TODO: Update with CRE contract address
+    // Aave v3 on Sepolia
+    address constant SEPOLIA_AAVE_POOL = 0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951;
+
+    // Test Tokens on Sepolia (Aave Faucet Tokens)
+    address constant SEPOLIA_WETH = 0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c;
+    address constant SEPOLIA_USDC = 0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8;
+    address constant SEPOLIA_DAI = 0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357;
+    address constant SEPOLIA_LINK = 0xf8Fb3713D459D7C1018BD0A49D19b4C44290EBE5;
+
+    // Aave aTokens on Sepolia
+    address constant SEPOLIA_AUSDC = 0x16dA4541aD1807f4443d92D26044C1147406EB80;
+    address constant SEPOLIA_ADAI = 0x29598b72eb5CeBd806C5dCD549490FdA35B13cD8;
+    address constant SEPOLIA_AWETH = 0x5b071b590a59395fE4025A0Ccc1FcC931AAc1830;
+
+    /*//////////////////////////////////////////////////////////////
+                        ANVIL LOCAL ADDRESSES
+    //////////////////////////////////////////////////////////////*/
+
+    // Note: For Anvil, these would be deployed mock contracts
+    // Use forge script to deploy mocks first, then update these
+    address constant ANVIL_POOL_MANAGER = address(0);
+    address constant ANVIL_AAVE_POOL = address(0);
+
+    /*//////////////////////////////////////////////////////////////
+                        STATE
+    //////////////////////////////////////////////////////////////*/
+
+    SentinelHook public hook;
+    IPoolManager public poolManager;
+    address public aavePool;
+    address public maintainer;
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
-        console.log("Deploying Sentinel Hook from:", deployer);
-        console.log("Target Chain: Base Mainnet");
+        // Determine network
+        bool isSepolia = block.chainid == 11155111;
+        bool isAnvil = block.chainid == 31337;
+
+        require(isSepolia || isAnvil, "Unsupported network: use Sepolia or Anvil");
+
+        console.log("=== Sentinel Multi-Pool Hook Deployment ===");
+        console.log("Deployer:", deployer);
+        console.log("Chain ID:", block.chainid);
+        console.log("Network:", isSepolia ? "ETH Sepolia" : "Anvil (Local)");
+
+        // Set network-specific addresses
+        if (isSepolia) {
+            poolManager = IPoolManager(SEPOLIA_POOL_MANAGER);
+            aavePool = SEPOLIA_AAVE_POOL;
+        } else {
+            require(ANVIL_POOL_MANAGER != address(0), "Deploy mock contracts first");
+            poolManager = IPoolManager(ANVIL_POOL_MANAGER);
+            aavePool = ANVIL_AAVE_POOL;
+        }
+
+        // CRE Maintainer - deployer acts as maintainer initially
+        maintainer = vm.envOr("CRE_MAINTAINER", deployer);
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy the hook
-        // For this example, we'll manage USDC liquidity in a WETH/USDC pool
-        SentinelHook hook = new SentinelHook(
-            IPoolManager(POOL_MANAGER),
-            ETH_USD_FEED, // Price feed for the pair
-            AAVE_POOL,
-            AUSDC,
-            Currency.wrap(WETH), // currency0
-            Currency.wrap(USDC), // currency1
-            Currency.wrap(USDC), // yieldCurrency (we yield the USDC side)
-            CRE_MAINTAINER
-        );
+        // Deploy the multi-pool Sentinel Hook
+        hook = new SentinelHook(poolManager, aavePool, maintainer);
 
-        console.log("Sentinel Hook deployed at:", address(hook));
-        console.log("Hook permissions configured for beforeSwap");
+        console.log("\n=== Hook Deployed ===");
+        console.log("Sentinel Hook:", address(hook));
+        console.log("Pool Manager:", address(poolManager));
+        console.log("Aave Pool:", aavePool);
+        console.log("Maintainer:", maintainer);
 
-        // Log deployment info for verification
-        console.log("=== Deployment Configuration ===");
-        console.log("Pool Manager:", POOL_MANAGER);
-        console.log("Price Feed:", ETH_USD_FEED);
-        console.log("Aave Pool:", AAVE_POOL);
-        console.log("aToken:", AUSDC);
-        console.log("Managed Currency:", USDC);
-        console.log("CRE Maintainer:", CRE_MAINTAINER);
-
-        // Verify hook address has correct permissions encoded
+        // Verify hook permissions
         address hookAddress = address(hook);
-        console.log("=== Hook Address Validation ===");
-        console.log("Hook Address:", hookAddress);
-        console.log(
-            "Address encodes beforeSwap permission:",
-            Hooks.hasPermission(IHooks(hookAddress), Hooks.BEFORE_SWAP_FLAG)
-        );
+        console.log("\n=== Hook Permissions ===");
+        console.log("beforeInitialize:", Hooks.hasPermission(IHooks(hookAddress), Hooks.BEFORE_INITIALIZE_FLAG));
+        console.log("beforeSwap:", Hooks.hasPermission(IHooks(hookAddress), Hooks.BEFORE_SWAP_FLAG));
 
         vm.stopBroadcast();
 
         console.log("\n=== Next Steps ===");
-        console.log("1. Verify the hook contract on BaseScan");
-        console.log(
-            "2. Update CRE_MAINTAINER with the Chainlink CRE contract address"
+        console.log("1. Verify the hook contract on Etherscan (Sepolia)");
+        console.log("2. Initialize pools with `initializePool()` function");
+        console.log("3. Configure Chainlink CRE maintainer address");
+        console.log("4. Deploy the Chainlink CRE workflow");
+    }
+
+    /// @notice Initialize an ETH/USDC pool with Sentinel management
+    function initializeEthUsdcPool() external {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address hookAddress = vm.envAddress("SENTINEL_HOOK");
+
+        require(hookAddress != address(0), "Set SENTINEL_HOOK env var");
+
+        SentinelHook sentinelHook = SentinelHook(payable(hookAddress));
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        // Create pool key
+        PoolKey memory key = PoolKey({
+            currency0: Currency.wrap(SEPOLIA_WETH),
+            currency1: Currency.wrap(SEPOLIA_USDC),
+            fee: 3000, // 0.3% fee
+            tickSpacing: 60,
+            hooks: IHooks(hookAddress)
+        });
+
+        // Initialize Sentinel management for this pool
+        sentinelHook.initializePool(
+            key,
+            SEPOLIA_ETH_USD_FEED, // Oracle
+            Currency.wrap(SEPOLIA_USDC), // Yield currency (USDC goes to Aave)
+            SEPOLIA_AUSDC, // aToken address
+            500, // 5% max deviation
+            -887220, // ~$500 lower bound
+            887220 // ~$5000 upper bound
         );
-        console.log(
-            "3. Initialize a pool with this hook using the PoolManager"
+
+        vm.stopBroadcast();
+
+        PoolId poolId = key.toId();
+        console.log("ETH/USDC Pool initialized with Sentinel");
+        console.log("Pool ID:", vm.toString(PoolId.unwrap(poolId)));
+    }
+
+    /// @notice Initialize a LINK/USDC pool with Sentinel management
+    function initializeLinkUsdcPool() external {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address hookAddress = vm.envAddress("SENTINEL_HOOK");
+
+        require(hookAddress != address(0), "Set SENTINEL_HOOK env var");
+
+        SentinelHook sentinelHook = SentinelHook(payable(hookAddress));
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        // Create pool key
+        PoolKey memory key = PoolKey({
+            currency0: Currency.wrap(SEPOLIA_LINK),
+            currency1: Currency.wrap(SEPOLIA_USDC),
+            fee: 3000, // 0.3% fee
+            tickSpacing: 60,
+            hooks: IHooks(hookAddress)
+        });
+
+        // Initialize Sentinel management for this pool
+        sentinelHook.initializePool(
+            key,
+            SEPOLIA_LINK_USD_FEED, // Oracle
+            Currency.wrap(SEPOLIA_USDC), // Yield currency (USDC goes to Aave)
+            SEPOLIA_AUSDC, // aToken address
+            800, // 8% max deviation (LINK more volatile)
+            -276324, // Lower bound
+            276324 // Upper bound
         );
-        console.log("4. Fund the hook with initial liquidity");
-        console.log("5. Deploy the Chainlink CRE workflow");
+
+        vm.stopBroadcast();
+
+        PoolId poolId = key.toId();
+        console.log("LINK/USDC Pool initialized with Sentinel");
+        console.log("Pool ID:", vm.toString(PoolId.unwrap(poolId)));
     }
 }
+

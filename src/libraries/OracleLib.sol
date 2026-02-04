@@ -25,19 +25,13 @@ library OracleLib {
     /// @param maxDeviationBps Maximum allowed deviation in basis points (e.g., 500 = 5%)
     /// @return isValid True if price is within acceptable range
     /// @return oraclePrice The current oracle price (scaled to 18 decimals)
-    function checkPriceDeviation(
-        AggregatorV3Interface chainlinkFeed,
-        uint256 poolPrice,
-        uint256 maxDeviationBps
-    ) internal view returns (bool isValid, uint256 oraclePrice) {
+    function checkPriceDeviation(AggregatorV3Interface chainlinkFeed, uint256 poolPrice, uint256 maxDeviationBps)
+        internal
+        view
+        returns (bool isValid, uint256 oraclePrice)
+    {
         // Fetch latest price from Chainlink
-        (
-            uint80 roundId,
-            int256 answer,
-            ,
-            uint256 updatedAt,
-            uint80 answeredInRound
-        ) = chainlinkFeed.latestRoundData();
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) = chainlinkFeed.latestRoundData();
 
         // Validate oracle data freshness
         if (updatedAt == 0 || answeredInRound < roundId) {
@@ -73,11 +67,11 @@ library OracleLib {
     /// @param fromDecimals Current decimal precision
     /// @param toDecimals Target decimal precision
     /// @return scaledPrice The price scaled to target decimals
-    function _scalePrice(
-        uint256 price,
-        uint8 fromDecimals,
-        uint8 toDecimals
-    ) private pure returns (uint256 scaledPrice) {
+    function _scalePrice(uint256 price, uint8 fromDecimals, uint8 toDecimals)
+        private
+        pure
+        returns (uint256 scaledPrice)
+    {
         if (fromDecimals == toDecimals) {
             return price;
         }
@@ -93,17 +87,13 @@ library OracleLib {
     /// @param price1 First price
     /// @param price2 Second price
     /// @return deviation Deviation in basis points
-    function _calculateDeviation(uint256 price1, uint256 price2)
-        private
-        pure
-        returns (uint256 deviation)
-    {
+    function _calculateDeviation(uint256 price1, uint256 price2) private pure returns (uint256 deviation) {
         if (price1 == 0 || price2 == 0) {
             return type(uint256).max;
         }
 
         uint256 diff = price1 > price2 ? price1 - price2 : price2 - price1;
-        
+
         // Calculate deviation in basis points (1 bp = 0.01%)
         // deviation = (diff * 10000) / average_price
         uint256 avgPrice = (price1 + price2) / 2;
@@ -113,12 +103,8 @@ library OracleLib {
     /// @notice Get the current oracle price in 18 decimals
     /// @param chainlinkFeed The Chainlink price feed
     /// @return price The current price from oracle
-    function getOraclePrice(AggregatorV3Interface chainlinkFeed)
-        internal
-        view
-        returns (uint256 price)
-    {
-        (, int256 answer, , uint256 updatedAt, ) = chainlinkFeed.latestRoundData();
+    function getOraclePrice(AggregatorV3Interface chainlinkFeed) internal view returns (uint256 price) {
+        (, int256 answer,, uint256 updatedAt,) = chainlinkFeed.latestRoundData();
 
         // Validate freshness
         if (block.timestamp - updatedAt > MAX_ORACLE_STALENESS) {

@@ -49,13 +49,8 @@ library YieldRouter {
         uint256 baseActiveRatio = _calculateBaseActiveRatio(rangeWidth, volatility);
 
         // Adjust based on position relative to range
-        uint256 adjustedActiveRatio = _adjustForPosition(
-            baseActiveRatio,
-            inRange,
-            distanceToLower,
-            distanceToUpper,
-            rangeWidth
-        );
+        uint256 adjustedActiveRatio =
+            _adjustForPosition(baseActiveRatio, inRange, distanceToLower, distanceToUpper, rangeWidth);
 
         // Calculate actual amounts
         activeAmount = (totalBalance * adjustedActiveRatio) / 10000; // adjustedActiveRatio is in basis points
@@ -67,7 +62,7 @@ library YieldRouter {
 
         // Calculate idle amount (can be negative if we need to withdraw from yield)
         uint256 idleUnsigned = totalBalance > activeAmount ? totalBalance - activeAmount : 0;
-        
+
         // Only deposit to yield if above threshold (gas optimization)
         if (idleUnsigned < MIN_YIELD_DEPOSIT) {
             idleAmount = 0;
@@ -81,11 +76,7 @@ library YieldRouter {
     /// @param rangeWidth Width of the liquidity range in ticks
     /// @param volatility Market volatility in basis points
     /// @return ratio Active liquidity ratio in basis points (0-10000)
-    function _calculateBaseActiveRatio(int24 rangeWidth, uint256 volatility)
-        private
-        pure
-        returns (uint256 ratio)
-    {
+    function _calculateBaseActiveRatio(int24 rangeWidth, uint256 volatility) private pure returns (uint256 ratio) {
         // Narrow ranges (< 400 ticks) need more active capital
         // Wide ranges (> 2000 ticks) can afford more idle capital
 
@@ -171,11 +162,11 @@ library YieldRouter {
     /// @param requiredActive Required active amount
     /// @param availableBalance Available balance not in yield
     /// @return withdrawAmount Amount to withdraw from yield (0 if no withdrawal needed)
-    function calculateYieldWithdrawal(
-        uint256 currentYieldBalance,
-        uint256 requiredActive,
-        uint256 availableBalance
-    ) internal pure returns (uint256 withdrawAmount) {
+    function calculateYieldWithdrawal(uint256 currentYieldBalance, uint256 requiredActive, uint256 availableBalance)
+        internal
+        pure
+        returns (uint256 withdrawAmount)
+    {
         // If available balance covers the requirement, no withdrawal needed
         if (availableBalance >= requiredActive) {
             return 0;
