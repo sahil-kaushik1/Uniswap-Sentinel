@@ -141,6 +141,7 @@ sentinel-protocol/
 │
 ├── docs/                          # Documentation
 │   ├── gelato_automate.md        # Gelato Automate reference
+│   ├── whitepaper.md             # Protocol whitepaper
 │   └── tech_stack.md             # Technology details
 │
 ├── agents.md                      # AI Agent context (START HERE)
@@ -174,11 +175,12 @@ forge build
 ### Running Tests
 
 ```bash
-# Unit tests
-forge test
+# Unit + fuzz tests
+forge test --match-path "test/unit/*.t.sol"
+forge test --match-path "test/fuzz/*.t.sol"
 
-# Fork tests (required for integration)
-forge test --fork-url $BASE_RPC_URL -vvv
+# Integration tests (fork)
+forge test --match-path "test/integration/*.t.sol" --fork-url $BASE_RPC_URL -vvv
 
 # Gas report
 forge test --gas-report

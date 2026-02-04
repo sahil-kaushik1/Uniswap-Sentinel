@@ -19,6 +19,7 @@ import {AaveAdapter, IPool} from "./libraries/AaveAdapter.sol";
 import {LiquidityAmounts} from "v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 /// @title SentinelHook
@@ -29,6 +30,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     using CurrencyLibrary for Currency;
     using OracleLib for AggregatorV3Interface;
     using PoolIdLibrary for PoolKey;
+    using TransientStateLibrary for IPoolManager;
 
     /*//////////////////////////////////////////////////////////////
                                  STRUCTS
@@ -184,8 +186,9 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Hook called before pool initialization - registers pool with Sentinel
-    function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
+    function _beforeInitialize(address /* sender */, PoolKey calldata /* key */, uint160 /* sqrtPriceX96 */)
         internal
+        pure
         override
         returns (bytes4)
     {
@@ -388,6 +391,35 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
 
         // 2. Calculate proportional Idle Capital
+        uint256 idle0ToWithdraw;
+        uint256 idle1ToWithdraw;
+
+        (uint256 totalIdle0, uint256 totalIdle1) = _getTotalIdleBalances(poolId);
+
+        idle0ToWithdraw = (totalIdle0 * shareFraction) / 1e18;
+        idle1ToWithdraw = (totalIdle1 * shareFraction) / 1e18;
+
+        // Ensure sufficient idle tokens (withdraw from Aave if needed)
+        _ensureSufficientIdle(poolId, idle0ToWithdraw, idle1ToWithdraw);
+
+        // Update share balances
+        lpShares[poolId][lp] -= sharesToWithdraw;
+        state.totalShares -= sharesToWithdraw;
+
+        // Transfer amounts
+        uint256 amount0 = active0 + idle0ToWithdraw;
+        uint256 amount1 = active1 + idle1ToWithdraw;
+
+        if (amount0 > 0) _transferTo(state.currency0, lp, amount0);
+        if (amount1 > 0) _transferTo(state.currency1, lp, amount1);
+
+        emit LPWithdrawn(poolId, lp, amount0, amount1, sharesToWithdraw);
+
+        return abi.encode(amount0, amount1);
+    }
+
+    function _getTotalIdleBalances(PoolId poolId) internal view returns (uint256, uint256) {
+        PoolState storage state = poolStates[poolId];
         uint256 totalIdle0 = state.currency0.balanceOf(address(this));
         uint256 totalIdle1 = state.currency1.balanceOf(address(this));
 
@@ -398,27 +430,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         } else {
             totalIdle1 += aaveBal;
         }
-
-        uint256 idle0 = (totalIdle0 * shareFraction) / 1e18;
-        uint256 idle1 = (totalIdle1 * shareFraction) / 1e18;
-
-        // Ensure sufficient idle tokens (withdraw from Aave if needed)
-        _ensureSufficientIdle(poolId, idle0, idle1);
-
-        // Update share balances
-        lpShares[poolId][lp] -= sharesToWithdraw;
-        state.totalShares -= sharesToWithdraw;
-
-        // Transfer amounts
-        uint256 amount0 = active0 + idle0;
-        uint256 amount1 = active1 + idle1;
-
-        if (amount0 > 0) _transferTo(state.currency0, lp, amount0);
-        if (amount1 > 0) _transferTo(state.currency1, lp, amount1);
-
-        emit LPWithdrawn(poolId, lp, amount0, amount1, sharesToWithdraw);
-
-        return abi.encode(amount0, amount1);
+        return (totalIdle0, totalIdle1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -427,7 +439,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
     /// @notice beforeSwap hook - validates price safety on EVERY swap
     /// @dev This is the "hot path" - must be gas-efficient (<50k gas)
-    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
+    function _beforeSwap(address /* sender */, PoolKey calldata key, SwapParams calldata /* params */, bytes calldata /* hookData */)
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
@@ -470,7 +482,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     }
 
     /// @notice Internal rebalancing logic (called inside unlock)
-    function _handleMaintain(PoolId poolId, int24 newLower, int24 newUpper, uint256 volatility) internal {
+    function _handleMaintain(PoolId poolId, int24 newLower, int24 newUpper, uint256 /* volatility */) internal {
         if (newLower >= newUpper) revert InvalidRange();
 
         PoolState storage state = poolStates[poolId];
@@ -539,6 +551,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Calculate total liquidity for a pool (active + idle)
+    /// @dev TODO: This is a simplified valuation. A proper one would price both tokens against a common asset.
     function _calculateTotalLiquidity(PoolId poolId, uint160 sqrtPriceX96)
         internal
         view
@@ -594,6 +607,8 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         int128 amt1 = delta.amount1();
         amount0 = amt0 < 0 ? uint256(uint128(-amt0)) : 0;
         amount1 = amt1 < 0 ? uint256(uint128(-amt1)) : 0;
+
+        _settleDeltas(state.currency0, state.currency1);
     }
 
     function _deployLiquidity(PoolId poolId, int24 tickLower, int24 tickUpper, uint256 amount0, uint256 amount1)
@@ -623,6 +638,30 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
                 }),
                 ""
             );
+
+            PoolState storage state = poolStates[poolId];
+            _settleDeltas(state.currency0, state.currency1);
+        }
+    }
+
+    function _settleDeltas(Currency currency0, Currency currency1) internal {
+        _settleOrTake(currency0);
+        _settleOrTake(currency1);
+    }
+
+    function _settleOrTake(Currency currency) internal {
+        int256 delta = poolManager.currencyDelta(address(this), currency);
+        if (delta > 0) {
+            poolManager.take(currency, address(this), uint256(delta));
+        } else if (delta < 0) {
+            uint256 amount = uint256(-delta);
+            poolManager.sync(currency);
+            if (Currency.unwrap(currency) == address(0)) {
+                poolManager.settle{value: amount}();
+            } else {
+                currency.transfer(address(poolManager), amount);
+                poolManager.settle();
+            }
         }
     }
 
@@ -653,7 +692,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
     }
 
-    function _estimatePoolPrice(PoolId poolId, address priceFeed) internal view returns (uint256) {
+    function _estimatePoolPrice(PoolId /* poolId */, address priceFeed) internal view returns (uint256) {
         return OracleLib.getOraclePrice(AggregatorV3Interface(priceFeed));
     }
 
@@ -666,13 +705,13 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     }
 
     /// @notice Get PoolKey from PoolId (placeholder - needs proper implementation)
+    /// @dev TODO: This is a simplified version - in production, store the full PoolKey or derive it properly.
     function _getPoolKey(PoolId poolId) internal view returns (PoolKey memory) {
         PoolState storage state = poolStates[poolId];
-        // This is a simplified version - in production, store the full PoolKey
         return PoolKey({
             currency0: state.currency0,
             currency1: state.currency1,
-            fee: 3000, // Default fee tier
+            fee: 3000,
             tickSpacing: 60,
             hooks: this
         });
