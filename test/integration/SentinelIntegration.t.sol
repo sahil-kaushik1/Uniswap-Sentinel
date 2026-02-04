@@ -100,21 +100,11 @@ contract SentinelIntegrationTest is Test {
         (Currency eth0, Currency eth1) = weth < usdc ? (weth, usdc) : (usdc, weth);
         (Currency link0, Currency link1) = link < usdc ? (link, usdc) : (usdc, link);
 
-        ethUsdcKey = PoolKey({
-            currency0: eth0,
-            currency1: eth1,
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(address(hook))
-        });
+        ethUsdcKey =
+            PoolKey({currency0: eth0, currency1: eth1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(hook))});
 
-        linkUsdcKey = PoolKey({
-            currency0: link0,
-            currency1: link1,
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(address(hook))
-        });
+        linkUsdcKey =
+            PoolKey({currency0: link0, currency1: link1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(hook))});
 
         ethUsdcPoolId = ethUsdcKey.toId();
         linkUsdcPoolId = linkUsdcKey.toId();
@@ -200,30 +190,14 @@ contract SentinelIntegrationTest is Test {
     }
 
     function testPoolIndexLookup() public checkFork {
-        hook.initializePool(
-            ethUsdcKey,
-            ETH_USD_FEED,
-            Currency.wrap(USDC),
-            AUSDC,
-            500,
-            -887220,
-            887220
-        );
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
 
         PoolId fetched = hook.getPoolByIndex(0);
         assertEq(PoolId.unwrap(fetched), PoolId.unwrap(ethUsdcPoolId));
     }
 
     function testEmergencyWithdraw_NoRevert() public checkFork {
-        hook.initializePool(
-            ethUsdcKey,
-            ETH_USD_FEED,
-            Currency.wrap(USDC),
-            AUSDC,
-            500,
-            -887220,
-            887220
-        );
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
 
         hook.emergencyWithdrawFromAave(ethUsdcPoolId);
     }
@@ -248,13 +222,8 @@ contract SentinelIntegrationTest is Test {
         Currency usdc = Currency.wrap(USDC);
         (Currency c0, Currency c1) = weth < usdc ? (weth, usdc) : (usdc, weth);
 
-        PoolKey memory key = PoolKey({
-            currency0: c0,
-            currency1: c1,
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(address(hook))
-        });
+        PoolKey memory key =
+            PoolKey({currency0: c0, currency1: c1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(hook))});
 
         // Try to set LINK as yield currency for WETH/USDC pool
         vm.expectRevert(SentinelHook.InvalidYieldCurrency.selector);

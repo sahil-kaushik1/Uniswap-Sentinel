@@ -186,7 +186,13 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Hook called before pool initialization - registers pool with Sentinel
-    function _beforeInitialize(address /* sender */, PoolKey calldata /* key */, uint160 /* sqrtPriceX96 */)
+    function _beforeInitialize(
+        address,
+        /* sender */
+        PoolKey calldata,
+        /* key */
+        uint160 /* sqrtPriceX96 */
+    )
         internal
         pure
         override
@@ -439,7 +445,14 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
     /// @notice beforeSwap hook - validates price safety on EVERY swap
     /// @dev This is the "hot path" - must be gas-efficient (<50k gas)
-    function _beforeSwap(address /* sender */, PoolKey calldata key, SwapParams calldata /* params */, bytes calldata /* hookData */)
+    function _beforeSwap(
+        address,
+        /* sender */
+        PoolKey calldata key,
+        SwapParams calldata,
+        /* params */
+        bytes calldata /* hookData */
+    )
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
@@ -482,7 +495,14 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     }
 
     /// @notice Internal rebalancing logic (called inside unlock)
-    function _handleMaintain(PoolId poolId, int24 newLower, int24 newUpper, uint256 /* volatility */) internal {
+    function _handleMaintain(
+        PoolId poolId,
+        int24 newLower,
+        int24 newUpper,
+        uint256 /* volatility */
+    )
+        internal
+    {
         if (newLower >= newUpper) revert InvalidRange();
 
         PoolState storage state = poolStates[poolId];
@@ -692,7 +712,15 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
     }
 
-    function _estimatePoolPrice(PoolId /* poolId */, address priceFeed) internal view returns (uint256) {
+    function _estimatePoolPrice(
+        PoolId,
+        /* poolId */
+        address priceFeed
+    )
+        internal
+        view
+        returns (uint256)
+    {
         return OracleLib.getOraclePrice(AggregatorV3Interface(priceFeed));
     }
 
@@ -708,13 +736,8 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     /// @dev TODO: This is a simplified version - in production, store the full PoolKey or derive it properly.
     function _getPoolKey(PoolId poolId) internal view returns (PoolKey memory) {
         PoolState storage state = poolStates[poolId];
-        return PoolKey({
-            currency0: state.currency0,
-            currency1: state.currency1,
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: this
-        });
+        return
+            PoolKey({currency0: state.currency0, currency1: state.currency1, fee: 3000, tickSpacing: 60, hooks: this});
     }
 
     /*//////////////////////////////////////////////////////////////

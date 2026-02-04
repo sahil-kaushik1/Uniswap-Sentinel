@@ -27,13 +27,7 @@ contract YieldRouterUnitTest is Test {
 
     function testCalculateIdealRatio_RespectsMinActive() public pure {
         uint256 totalBalance = YieldRouter.MIN_ACTIVE_LIQUIDITY + 10e18;
-        (uint256 activeAmount, int256 idleAmount) = YieldRouter.calculateIdealRatio(
-            totalBalance,
-            -200,
-            200,
-            0,
-            500
-        );
+        (uint256 activeAmount, int256 idleAmount) = YieldRouter.calculateIdealRatio(totalBalance, -200, 200, 0, 500);
 
         assertTrue(activeAmount >= YieldRouter.MIN_ACTIVE_LIQUIDITY);
         assertTrue(int256(totalBalance) - int256(activeAmount) == idleAmount || idleAmount == 0);

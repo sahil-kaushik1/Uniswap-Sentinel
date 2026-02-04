@@ -24,11 +24,8 @@ contract DeploySentinelUnitTest is Test {
             HookMiner.find(deployer, flags, type(SentinelHook).creationCode, constructorArgs);
 
         vm.prank(deployer);
-        SentinelHook hook = new SentinelHook{salt: salt}(
-            IPoolManager(address(poolManager)),
-            address(aavePool),
-            deployer
-        );
+        SentinelHook hook =
+            new SentinelHook{salt: salt}(IPoolManager(address(poolManager)), address(aavePool), deployer);
         assertEq(address(hook), expectedAddress);
 
         vm.setEnv("PRIVATE_KEY", "1");
@@ -51,11 +48,8 @@ contract DeploySentinelUnitTest is Test {
             HookMiner.find(deployer, flags, type(SentinelHook).creationCode, constructorArgs);
 
         vm.prank(deployer);
-        SentinelHook hook = new SentinelHook{salt: salt}(
-            IPoolManager(address(poolManager)),
-            address(aavePool),
-            deployer
-        );
+        SentinelHook hook =
+            new SentinelHook{salt: salt}(IPoolManager(address(poolManager)), address(aavePool), deployer);
         assertEq(address(hook), expectedAddress);
 
         vm.setEnv("PRIVATE_KEY", "2");

@@ -20,13 +20,9 @@ contract MockOracle is AggregatorV3Interface {
         _startedAt = block.timestamp;
     }
 
-    function setRoundData(
-        uint80 roundId,
-        int256 answer,
-        uint256 startedAt,
-        uint256 updatedAt,
-        uint80 answeredInRound
-    ) external {
+    function setRoundData(uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        external
+    {
         _roundId = roundId;
         _answer = answer;
         _startedAt = startedAt;
@@ -50,21 +46,11 @@ contract MockOracle is AggregatorV3Interface {
         return 1;
     }
 
-    function getRoundData(uint80)
-        external
-        view
-        override
-        returns (uint80, int256, uint256, uint256, uint80)
-    {
+    function getRoundData(uint80) external view override returns (uint80, int256, uint256, uint256, uint80) {
         return (_roundId, _answer, _startedAt, _updatedAt, _answeredInRound);
     }
 
-    function latestRoundData()
-        external
-        view
-        override
-        returns (uint80, int256, uint256, uint256, uint80)
-    {
+    function latestRoundData() external view override returns (uint80, int256, uint256, uint256, uint80) {
         return (_roundId, _answer, _startedAt, _updatedAt, _answeredInRound);
     }
 }

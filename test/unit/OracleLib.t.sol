@@ -65,11 +65,8 @@ contract OracleLibUnitTest is Test {
         MockOracle oracle = new MockOracle(8, 2000e8);
         oracle.setRoundData(1, 2000e8, block.timestamp, block.timestamp, 1);
 
-        (bool ok, uint256 oraclePrice) = harness.callCheckPriceDeviation(
-            AggregatorV3Interface(address(oracle)),
-            2000e18,
-            500
-        );
+        (bool ok, uint256 oraclePrice) =
+            harness.callCheckPriceDeviation(AggregatorV3Interface(address(oracle)), 2000e18, 500);
 
         assertTrue(ok);
         assertEq(oraclePrice, 2000e18);

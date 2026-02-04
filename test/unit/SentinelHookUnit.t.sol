@@ -60,15 +60,7 @@ contract SentinelHookUnitTest is Test {
 
         poolManager.setSlot0(poolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
 
-        hook.initializePool(
-            key,
-            address(oracle),
-            Currency.wrap(address(token0)),
-            address(aToken),
-            500,
-            -120,
-            120
-        );
+        hook.initializePool(key, address(oracle), Currency.wrap(address(token0)), address(aToken), 500, -120, 120);
     }
 
     function testInitializePool_Unauthorized() public {
@@ -85,15 +77,7 @@ contract SentinelHookUnitTest is Test {
 
         vm.prank(makeAddr("attacker"));
         vm.expectRevert(SentinelHook.Unauthorized.selector);
-        hook.initializePool(
-            otherKey,
-            address(oracle),
-            Currency.wrap(address(token0)),
-            address(aToken),
-            500,
-            -120,
-            120
-        );
+        hook.initializePool(otherKey, address(oracle), Currency.wrap(address(token0)), address(aToken), 500, -120, 120);
     }
 
     function testInitializePool_InvalidYieldCurrency() public {
@@ -109,15 +93,7 @@ contract SentinelHookUnitTest is Test {
         poolManager.setSlot0(otherKey.toId(), TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
 
         vm.expectRevert(SentinelHook.InvalidYieldCurrency.selector);
-        hook.initializePool(
-            otherKey,
-            address(oracle),
-            Currency.wrap(address(0xBEEF)),
-            address(aToken),
-            500,
-            -120,
-            120
-        );
+        hook.initializePool(otherKey, address(oracle), Currency.wrap(address(0xBEEF)), address(aToken), 500, -120, 120);
     }
 
     function testDepositLiquidity_RegistersLpAndMintsShares() public {
@@ -186,13 +162,7 @@ contract SentinelHookUnitTest is Test {
         poolManager.setSlot0(yieldPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
 
         hook.initializePool(
-            yieldKey,
-            address(oracle),
-            Currency.wrap(address(yieldToken)),
-            address(aToken),
-            500,
-            -120,
-            120
+            yieldKey, address(oracle), Currency.wrap(address(yieldToken)), address(aToken), 500, -120, 120
         );
 
         yieldToken.mint(address(aavePool), 100e18);
