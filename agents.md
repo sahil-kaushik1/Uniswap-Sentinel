@@ -56,7 +56,30 @@ sequenceDiagram
     
     Hook->>Pool: modifyLiquidity(newRange, activeAmount)
 ```
+### User Entry point
 
+```mermaid
+User initiates a swap on Uniswap v4 Pool
+           ↓
+    SentinelHook.beforeSwap() is triggered
+           ↓
+    ✓ Oracle Price Deviation Check (Circuit Breaker)
+           ↓
+    ✓ If safe: Swap proceeds normally
+    ✗ If unsafe: Swap reverts
+```
+
+### Lp Interaction flow
+
+```mermaid
+LP provides initial liquidity to the Sentinel-managed pool
+                    ↓
+        Capital is locked in SentinelHook
+                    ↓
+   Hook splits capital into two buckets:
+   ├── Active: Deployed in narrow Uniswap range
+   └── Idle: Earning yield in Aave lending protocol
+```
 ## 3. The Golden Rules for AI Agents
 If you are an AI generating code for this project, you **MUST** adhere to these rules.
 
@@ -93,16 +116,16 @@ The **Chainlink CRE** acts as the "Strategist".
 ## 5. Codebase Map & Critical Files
 
 ### Contracts (`/contracts`)
-| File | Role | Key Functionality |
-| :--- | :--- | :--- |
-| `src/SentinelHook.sol` | **Core** | `beforeSwap` (Guard), `maintain` (Rebalance), `_handleIdleCapital` (Yield routing). |
-| `src/libraries/OracleLib.sol` | **Safety** | `checkPriceDeviation()` using Chainlink/TWAP. |
-| `src/libraries/YieldRouter.sol` | **Math** | `calculateIdealRatio()`, segregates Active vs. Idle funds. |
-| `src/libraries/AaveAdapter.sol` | **Integration** | `depositToAave()`, `withdrawFromAave()`. Wraps `IPool`. |
+| File                            | Role            | Key Functionality                                                                   |
+| :------------------------------ | :-------------- | :---------------------------------------------------------------------------------- |
+| `src/SentinelHook.sol`          | **Core**        | `beforeSwap` (Guard), `maintain` (Rebalance), `_handleIdleCapital` (Yield routing). |
+| `src/libraries/OracleLib.sol`   | **Safety**      | `checkPriceDeviation()` using Chainlink/TWAP.                                       |
+| `src/libraries/YieldRouter.sol` | **Math**        | `calculateIdealRatio()`, segregates Active vs. Idle funds.                          |
+| `src/libraries/AaveAdapter.sol` | **Integration** | `depositToAave()`, `withdrawFromAave()`. Wraps `IPool`.                             |
 
 ### Workflows (`/workflows` - Conceptual)
-| File | Role | Key Functionality |
-| :--- | :--- | :--- |
+| File                    | Role              | Key Functionality                                                |
+| :---------------------- | :---------------- | :--------------------------------------------------------------- |
 | `SentinelWorkflow.yaml` | **Orchestration** | Defines the Trigger -> Compute -> Consensus -> Execute pipeline. |
 
 ## 6. External Resources & Docs
