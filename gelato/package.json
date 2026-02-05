@@ -1,0 +1,20 @@
+{
+    "name": "sentinel-gelato-agent",
+    "version": "1.0.0",
+    "description": "Gelato Web3 Function for Sentinel Protocol Reactive Strategy",
+    "license": "MIT",
+    "scripts": {
+        "build": "tsc",
+        "test": "jest",
+        "deploy": "npx w3f deploy web3-functions/rebalancer"
+    },
+    "dependencies": {
+        "@gelatonetwork/web3-functions-sdk": "^2.4.0",
+        "ethers": "^5.7.2",
+        "ky": "^0.33.3"
+    },
+    "devDependencies": {
+        "@types/node": "^18.0.0",
+        "typescript": "^4.9.5"
+    }
+}
