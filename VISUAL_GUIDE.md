@@ -69,8 +69,9 @@
     │ LP2: 2000 shares    │       │ LP5: 1200 shares    │       │ LP6: 1300 shares    │
     │ LP3: 3000 shares    │       │ LP6: 500 shares     │       │                     │
     │                     │       │                     │       │                     │
-    │ Active: 70%         │       │ Active: 60%         │       │ Active: 80%         │
-    │ Idle: 30%           │       │ Idle: 40%           │       │ Idle: 20%           │
+              Active: 70%         │       │ Active: 60%         │       │ Active: 80%         │
+    │ Idle(USDC): To Aave │       │ Idle(WBTC): To Aave │       │ Idle(ARB): To Aave  │
+    │ Idle(ETH): To Aave  │       │ Idle(ETH): To Aave  │       │ Idle(USDC): To Aave │
     └──────────┬──────────┘       └──────────┬──────────┘       └──────────┬──────────┘
                │                             │                             │
                │    ┌────────────────────────┼────────────────────────┐    │
@@ -79,10 +80,11 @@
     ┌─────────────────────────────────────────────────────────────────────────────────┐
     │                              AAVE v3 LENDING POOL                               │
     │                                                                                  │
-    │   aUSDC Balance: 2500        aWETH Balance: 1000        aUSDC Balance: 300      │
-    │   (from ETH/USDC pool)       (from WBTC/ETH pool)       (from ARB/USDC pool)    │
+    │   aUSDC: 2500                aWBTC: 0.2                 aARB:  500              │
+    │   aWETH: 1.5                 aWETH: 0.8                 aUSDC: 300              │
+    │   (Pool 1 Yield)             (Pool 2 Yield)             (Pool 3 Yield)          │
     │                                                                                  │
-    │   Each pool's idle capital is tracked separately but deposited to same Aave    │
+    │   *All idle assets from every pool are earning yield simultaneously            │
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -234,7 +236,9 @@
 │     modifyLiquidity(poolKey, -activeLiquidity)                                  │
 │                                                                                  │
 │  3. Withdraw from Aave (consolidate all capital)                                │
-│     AaveAdapter.withdrawFromAave(state.yieldCurrency, max)                      │
+│     aaveBal = AaveAdapter.getAaveBalance(aToken, this)                          │
+│     if (aaveBal > 0)                                                            │
+│       AaveAdapter.withdrawFromAave(state.yieldCurrency, max)                    │
 │                                                                                  │
 │  4. Calculate new split                                                         │
 │     (active, idle) = YieldRouter.calculateIdealRatio(                           │
@@ -424,6 +428,102 @@ Block    Event                           Pool        Parameters
 │  │  Owner CAN update maintainer address                                     │    │
 │  │  Owner CAN do emergency Aave withdrawal                                  │    │
 │  └─────────────────────────────────────────────────────────────────────────┘    │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+
+---
+
+## Deployment & Initialization Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        STEP 1: HOOK DEPLOYMENT (Mining)                         │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   Goal: Deploy SentinelHook at address with flags:                              │
+│         0010 0000 ... 0000 0100 (BeforeSwap | BeforeInitialize)                 │
+│                                                                                  │
+│   ┌────────────────────────┐       ┌───────────────────────────────────────┐    │
+│   │ HookMiner (Off-Chain)  ├──────►│ Find salt for CREATE2                 │    │
+│   └────────────────────────┘       │ Result: 0x... (Valid Flag Address)    │    │
+│                                    └──────────────────┬────────────────────┘    │
+│                                                       │                         │
+│                                                       ▼                         │
+│                                    ┌───────────────────────────────────────┐    │
+│                                    │ Deploy SentinelHook(manager, aave...) │    │
+│                                    │ at: 0x[ValidFlags]...                 │    │
+│                                    └───────────────────────────────────────┘    │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                     STEP 2: MULTI-POOL INITIALIZATION                           │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   Deployer/Owner calls initializePool() for EACH pair they want to manage       │
+│                                                                                  │
+│   ┌───────────────────────┐     ┌───────────────────────┐                       │
+│   │ Initialize ETH/USDC   │     │ Initialize LINK/USDC  │                       │
+│   ├───────────────────────┤     ├───────────────────────┤                       │
+│   │ Key: {ETH, USDC,...}  │     │ Key: {LINK, USDC...}  │                       │
+│   │ Oracle: ETH Feed      │     │ Oracle: LINK Feed     │                       │
+│   │ Yield: USDC (aUSDC)   │     │ Yield: USDC (aUSDC)   │                       │
+│   │ MaxDev: 5% (500bps)   │     │ MaxDev: 8% (800bps)   │                       │
+│   └───────────┬───────────┘     └───────────┬───────────┘                       │
+│               │                             │                                   │
+│               ▼                             ▼                                   │
+│   ┌───────────────────────┐     ┌───────────────────────┐                       │
+│   │ Sentinel Storage      │     │ Sentinel Storage      │                       │
+│   │ poolStates[PoolId(A)] │     │ poolStates[PoolId(B)] │                       │
+│   │ (Initialized = true)  │     │ (Initialized = true)  │                       │
+│   └───────────────────────┘     └───────────────────────┘                       │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+
+---
+
+## Core Libraries & Internal Logic
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           INTERNAL COMPONENT LOGIC                              │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  ┌────────────────────────┐      ┌────────────────────────┐                      │
+│  │ OracleLib (Hot Path)   │      │ YieldRouter (Math)     │                      │
+│  ├────────────────────────┤      ├────────────────────────┤                      │
+│  │ Safety Circuit Breaker │      │ Capital Allocation     │                      │
+│  │                        │      │                        │                      │
+│  │ checkPriceDeviation(   │      │ calculateIdealRatio(   │                      │
+│  │   feed,                │      │   totalBal,            │                      │
+│  │   poolPrice,           │      │   rangeWidth,          │                      │
+│  │   maxBps               │      │   volatility           │                      │
+│  │ )                      │      │ )                      │                      │
+│  │                        │      │                        │                      │
+│  │ -> Reverts if unsafe   │      │ -> Returns (Act, Idle) │                      │
+│  └────────────────────────┘      └────────────────────────┘                      │
+│                                                                                  │
+│                        ┌────────────────────────┐                                │
+│                        │ AaveAdapter (Yield)    │                                │
+│                        ├────────────────────────┤                                │
+│                        │ External Integration   │                                │
+│                        │                        │                                │
+│                        │ depositToAave()        │                                │
+│                        │ withdrawFromAave()     │                                │
+│                        │ getAaveBalance()       │                                │
+│                        │                        │                                │
+│                        │ *Handles ERC20         │                                │
+│                        │ approvals & safe ops   │                                │
+│                        └────────────────────────┘                                │
 │                                                                                  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
