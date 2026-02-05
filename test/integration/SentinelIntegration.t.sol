@@ -133,6 +133,29 @@ contract SentinelIntegrationTest is Test {
         }
     }
 
+    function _aTokensForKey(PoolKey memory key) internal pure returns (address aToken0, address aToken1) {
+        if (Currency.unwrap(key.currency0) == USDC) {
+            aToken0 = AUSDC;
+        }
+        if (Currency.unwrap(key.currency1) == USDC) {
+            aToken1 = AUSDC;
+        }
+    }
+
+    function _usdcATokenFromState(PoolKey memory key, SentinelHook.PoolState memory state)
+        internal
+        pure
+        returns (address)
+    {
+        if (Currency.unwrap(key.currency0) == USDC) {
+            return state.aToken0;
+        }
+        if (Currency.unwrap(key.currency1) == USDC) {
+            return state.aToken1;
+        }
+        return address(0);
+    }
+
     modifier checkFork() {
         if (!forking) {
             vm.skip(true, "This test requires a fork.");
@@ -152,12 +175,15 @@ contract SentinelIntegrationTest is Test {
     }
 
     function testMultiPoolInitialization() public checkFork {
+        (address ethAToken0, address ethAToken1) = _aTokensForKey(ethUsdcKey);
+        (address linkAToken0, address linkAToken1) = _aTokensForKey(linkUsdcKey);
+
         // Initialize ETH/USDC pool
         hook.initializePool(
             ethUsdcKey,
             ETH_USD_FEED,
-            Currency.wrap(USDC),
-            AUSDC,
+            ethAToken0,
+            ethAToken1,
             500, // 5% max deviation
             -887220,
             887220
@@ -167,8 +193,8 @@ contract SentinelIntegrationTest is Test {
         hook.initializePool(
             linkUsdcKey,
             LINK_USD_FEED,
-            Currency.wrap(USDC),
-            AUSDC,
+            linkAToken0,
+            linkAToken1,
             800, // 8% max deviation (more volatile)
             -276324,
             276324
@@ -187,55 +213,49 @@ contract SentinelIntegrationTest is Test {
         assertEq(linkState.priceFeed, LINK_USD_FEED);
         assertEq(ethState.maxDeviationBps, 500);
         assertEq(linkState.maxDeviationBps, 800);
+        assertEq(_usdcATokenFromState(ethUsdcKey, ethState), AUSDC);
+        assertEq(_usdcATokenFromState(linkUsdcKey, linkState), AUSDC);
     }
 
     function testPoolIndexLookup() public checkFork {
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
 
         PoolId fetched = hook.getPoolByIndex(0);
         assertEq(PoolId.unwrap(fetched), PoolId.unwrap(ethUsdcPoolId));
     }
 
     function testEmergencyWithdraw_NoRevert() public checkFork {
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
 
         hook.emergencyWithdrawFromAave(ethUsdcPoolId);
     }
 
     function testCannotInitializePoolTwice() public checkFork {
         // Initialize first time
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
 
         // Try to initialize again - should revert
         vm.expectRevert(SentinelHook.PoolAlreadyInitialized.selector);
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
     }
 
     function testOnlyOwnerCanInitializePool() public checkFork {
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
         vm.prank(user);
         vm.expectRevert(SentinelHook.Unauthorized.selector);
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
     }
 
-    function testInvalidYieldCurrency() public checkFork {
-        Currency weth = Currency.wrap(WETH);
-        Currency usdc = Currency.wrap(USDC);
-        (Currency c0, Currency c1) = weth < usdc ? (weth, usdc) : (usdc, weth);
+    function testInitializePool_StoresATokens() public checkFork {
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
 
-        PoolKey memory key =
-            PoolKey({currency0: c0, currency1: c1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(hook))});
-
-        // Try to set LINK as yield currency for WETH/USDC pool
-        vm.expectRevert(SentinelHook.InvalidYieldCurrency.selector);
-        hook.initializePool(
-            key,
-            ETH_USD_FEED,
-            Currency.wrap(LINK), // Invalid - not in pool
-            AUSDC,
-            500,
-            -887220,
-            887220
-        );
+        SentinelHook.PoolState memory state = hook.getPoolState(ethUsdcPoolId);
+        assertEq(state.aToken0, aToken0);
+        assertEq(state.aToken1, aToken1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -279,7 +299,8 @@ contract SentinelIntegrationTest is Test {
 
     function testLPDDeposit() public checkFork {
         // Initialize pool
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -199980, 199980);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -199980, 199980);
         _ensurePoolInitialized(ethUsdcKey);
 
         // Mint some test tokens for the LP
@@ -342,7 +363,8 @@ contract SentinelIntegrationTest is Test {
 
     function testMaintainOnlyByMaintainer() public checkFork {
         // Initialize pool first
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
 
         // Test that only maintainer can call maintain()
         vm.prank(user);
@@ -359,7 +381,8 @@ contract SentinelIntegrationTest is Test {
 
     function testMaintainInvalidRange() public checkFork {
         // Initialize pool first
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
 
         // Test that invalid ranges are rejected
         vm.prank(maintainer);
@@ -369,7 +392,8 @@ contract SentinelIntegrationTest is Test {
 
     function testMaintain() public checkFork {
         // 1. Initialize pool and deposit
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -199980, 199980);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -199980, 199980);
         bool poolOk = _ensurePoolInitialized(ethUsdcKey);
         if (!poolOk) {
             vm.skip(true, "Pool initialization failed on fork");
@@ -443,9 +467,11 @@ contract SentinelIntegrationTest is Test {
 
     function testGetPoolByIndex() public checkFork {
         // Initialize two pools
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address ethAToken0, address ethAToken1) = _aTokensForKey(ethUsdcKey);
+        (address linkAToken0, address linkAToken1) = _aTokensForKey(linkUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, ethAToken0, ethAToken1, 500, -887220, 887220);
 
-        hook.initializePool(linkUsdcKey, LINK_USD_FEED, Currency.wrap(USDC), AUSDC, 800, -276324, 276324);
+        hook.initializePool(linkUsdcKey, LINK_USD_FEED, linkAToken0, linkAToken1, 800, -276324, 276324);
 
         // Verify pool retrieval by index
         PoolId pool0 = hook.getPoolByIndex(0);
@@ -456,7 +482,8 @@ contract SentinelIntegrationTest is Test {
     }
 
     function testSharePriceInitialValue() public checkFork {
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
 
         // With no deposits, share price should be 1e18
         uint256 sharePrice = hook.getSharePrice(ethUsdcPoolId);
@@ -464,7 +491,8 @@ contract SentinelIntegrationTest is Test {
     }
 
     function testLPCountInitialValue() public checkFork {
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address aToken0, address aToken1) = _aTokensForKey(ethUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, aToken0, aToken1, 500, -887220, 887220);
 
         // Initially no LPs
         uint256 lpCount = hook.getLPCount(ethUsdcPoolId);
@@ -477,9 +505,11 @@ contract SentinelIntegrationTest is Test {
 
     function testPoolStateIsolation() public checkFork {
         // Initialize two pools with different configurations
-        hook.initializePool(ethUsdcKey, ETH_USD_FEED, Currency.wrap(USDC), AUSDC, 500, -887220, 887220);
+        (address ethAToken0, address ethAToken1) = _aTokensForKey(ethUsdcKey);
+        (address linkAToken0, address linkAToken1) = _aTokensForKey(linkUsdcKey);
+        hook.initializePool(ethUsdcKey, ETH_USD_FEED, ethAToken0, ethAToken1, 500, -887220, 887220);
 
-        hook.initializePool(linkUsdcKey, LINK_USD_FEED, Currency.wrap(USDC), AUSDC, 800, -276324, 276324);
+        hook.initializePool(linkUsdcKey, LINK_USD_FEED, linkAToken0, linkAToken1, 800, -276324, 276324);
 
         // Get states
         SentinelHook.PoolState memory ethState = hook.getPoolState(ethUsdcPoolId);
@@ -490,7 +520,8 @@ contract SentinelIntegrationTest is Test {
         assertTrue(ethState.maxDeviationBps != linkState.maxDeviationBps);
         assertTrue(ethState.priceFeed != linkState.priceFeed);
 
-        // Both use USDC for yield
-        assertTrue(Currency.unwrap(ethState.yieldCurrency) == Currency.unwrap(linkState.yieldCurrency));
+        // Both use USDC aToken for yield on the USDC side
+        assertEq(_usdcATokenFromState(ethUsdcKey, ethState), AUSDC);
+        assertEq(_usdcATokenFromState(linkUsdcKey, linkState), AUSDC);
     }
 }

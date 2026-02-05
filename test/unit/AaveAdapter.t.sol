@@ -48,6 +48,7 @@ contract AaveAdapterUnitTest is Test {
     function setUp() public {
         pool = new MockAavePool();
         asset = new MockERC20("Asset", "AST", 18);
+        pool.initReserve(address(asset), "aAsset", "aAST");
         aToken = new MockERC20("aToken", "aAST", 18);
         harness = new AaveAdapterHarness();
     }
@@ -75,7 +76,8 @@ contract AaveAdapterUnitTest is Test {
     }
 
     function testWithdrawFromAave_Succeeds() public {
-        asset.mint(address(pool), 500e18);
+        asset.mint(address(harness), 500e18);
+        harness.depositToAave(IPool(address(pool)), address(asset), 500e18, address(harness));
 
         uint256 withdrawn = harness.withdrawFromAave(IPool(address(pool)), address(asset), 300e18, address(this));
         assertEq(withdrawn, 300e18);
@@ -114,7 +116,8 @@ contract AaveAdapterUnitTest is Test {
     }
 
     function testEmergencyWithdrawAll_Succeeds() public {
-        asset.mint(address(pool), 25e18);
+        asset.mint(address(harness), 25e18);
+        harness.depositToAave(IPool(address(pool)), address(asset), 25e18, address(harness));
         uint256 withdrawn = harness.emergencyWithdrawAll(IPool(address(pool)), address(asset), address(this));
         assertEq(withdrawn, 25e18);
         assertEq(asset.balanceOf(address(this)), 25e18);

@@ -38,8 +38,13 @@ contract SentinelHookHarness is SentinelHook {
         _ensureSufficientIdle(poolId, required0, required1);
     }
 
-    function exposedDistributeIdleToAave(PoolId poolId, uint256 amount) external {
-        _distributeIdleToAave(poolId, amount);
+    function exposedDistributeIdleToAave(
+        PoolId poolId,
+        Currency currency,
+        address aToken,
+        uint256 amount
+    ) external {
+        _distributeIdleToAave(poolId, currency, aToken, amount);
     }
 
     function setActiveLiquidity(PoolId poolId, uint128 liquidity) external {

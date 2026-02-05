@@ -38,6 +38,13 @@ contract MockAavePool {
 
     mapping(address => address) public assetToAToken;
 
+    bool public supplyCalled;
+    bool public withdrawCalled;
+    bool public revertSupply;
+    bool public revertWithdraw;
+    bool public revertIncome;
+    uint256 public normalizedIncome = 1e27;
+
     function initReserve(
         address asset,
         string memory name,
@@ -61,6 +68,8 @@ contract MockAavePool {
         address onBehalfOf,
         uint16 /*referralCode*/
     ) external {
+        supplyCalled = true;
+        if (revertSupply) revert("Mock supply revert");
         address aTokenAddr = assetToAToken[asset];
         require(aTokenAddr != address(0), "Reserve not initialized");
 
@@ -76,6 +85,8 @@ contract MockAavePool {
         uint256 amount,
         address to
     ) external returns (uint256) {
+        withdrawCalled = true;
+        if (revertWithdraw) revert("Mock withdraw revert");
         address aTokenAddr = assetToAToken[asset];
         require(aTokenAddr != address(0), "Reserve not initialized");
 
@@ -98,9 +109,24 @@ contract MockAavePool {
         return amountToWithdraw;
     }
 
-    function getReserveNormalizedIncome(
-        address /*asset*/
-    ) external pure returns (uint256) {
-        return 1e27; // 1.0 ray
+    function getReserveNormalizedIncome(address /*asset*/) external view returns (uint256) {
+        if (revertIncome) revert("Mock income revert");
+        return normalizedIncome;
+    }
+
+    function setRevertSupply(bool value) external {
+        revertSupply = value;
+    }
+
+    function setRevertWithdraw(bool value) external {
+        revertWithdraw = value;
+    }
+
+    function setRevertIncome(bool value) external {
+        revertIncome = value;
+    }
+
+    function setNormalizedIncome(uint256 value) external {
+        normalizedIncome = value;
     }
 }

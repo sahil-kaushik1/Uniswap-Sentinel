@@ -23,7 +23,7 @@ contract SentinelHookUnitTest is Test {
     MockAavePool aavePool;
     MockERC20 token0;
     MockERC20 token1;
-    MockERC20 aToken;
+    address aToken0;
     MockOracle oracle;
     SentinelHookHarness hook;
 
@@ -43,7 +43,7 @@ contract SentinelHookUnitTest is Test {
         aavePool = new MockAavePool();
         token0 = new MockERC20("Token0", "TK0", 18);
         token1 = new MockERC20("Token1", "TK1", 18);
-        aToken = new MockERC20("aToken", "aTK", 18);
+        aToken0 = aavePool.initReserve(address(token0), "aToken0", "aTK0");
         oracle = new MockOracle(8, 2000e8);
 
         hook = new SentinelHookHarness(IPoolManager(address(poolManager)), address(aavePool), maintainer);
@@ -60,7 +60,7 @@ contract SentinelHookUnitTest is Test {
 
         poolManager.setSlot0(poolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
 
-        hook.initializePool(key, address(oracle), Currency.wrap(address(token0)), address(aToken), 500, -120, 120);
+        hook.initializePool(key, address(oracle), aToken0, address(0), 500, -120, 120);
     }
 
     function testInitializePool_Unauthorized() public {
@@ -77,23 +77,13 @@ contract SentinelHookUnitTest is Test {
 
         vm.prank(makeAddr("attacker"));
         vm.expectRevert(SentinelHook.Unauthorized.selector);
-        hook.initializePool(otherKey, address(oracle), Currency.wrap(address(token0)), address(aToken), 500, -120, 120);
+        hook.initializePool(otherKey, address(oracle), aToken0, address(0), 500, -120, 120);
     }
 
-    function testInitializePool_InvalidYieldCurrency() public {
-        MockERC20 token2 = new MockERC20("Token2", "TK2", 18);
-        PoolKey memory otherKey = PoolKey({
-            currency0: Currency.wrap(address(token0)),
-            currency1: Currency.wrap(address(token2)),
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(address(hook))
-        });
-
-        poolManager.setSlot0(otherKey.toId(), TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
-
-        vm.expectRevert(SentinelHook.InvalidYieldCurrency.selector);
-        hook.initializePool(otherKey, address(oracle), Currency.wrap(address(0xBEEF)), address(aToken), 500, -120, 120);
+    function testInitializePool_StoresATokens() public {
+        SentinelHook.PoolState memory state = hook.getPoolState(poolId);
+        assertEq(state.aToken0, aToken0);
+        assertEq(state.aToken1, address(0));
     }
 
     function testDepositLiquidity_RegistersLpAndMintsShares() public {
@@ -149,6 +139,7 @@ contract SentinelHookUnitTest is Test {
 
     function testEnsureSufficientIdle_WithdrawsFromAave() public {
         MockERC20 yieldToken = new MockERC20("Token2", "TK2", 18);
+        address aYieldToken = aavePool.initReserve(address(yieldToken), "aYield", "aYLD");
 
         PoolKey memory yieldKey = PoolKey({
             currency0: Currency.wrap(address(token0)),
@@ -161,11 +152,10 @@ contract SentinelHookUnitTest is Test {
 
         poolManager.setSlot0(yieldPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
 
-        hook.initializePool(
-            yieldKey, address(oracle), Currency.wrap(address(yieldToken)), address(aToken), 500, -120, 120
-        );
+        hook.initializePool(yieldKey, address(oracle), address(0), aYieldToken, 500, -120, 120);
 
-        yieldToken.mint(address(aavePool), 100e18);
+        yieldToken.mint(address(hook), 100e18);
+        hook.exposedDistributeIdleToAave(yieldPoolId, Currency.wrap(address(yieldToken)), aYieldToken, 100e18);
 
         hook.exposedEnsureSufficientIdle(yieldPoolId, 0, 50e18);
         assertTrue(aavePool.withdrawCalled());
@@ -209,11 +199,10 @@ contract SentinelHookUnitTest is Test {
 
     function testHandleMaintain_WithdrawsAndRedeploys() public {
         hook.setActiveLiquidity(poolId, 1000);
-        aToken.mint(address(hook), 200e18);
         token0.mint(address(hook), 500e18);
         token1.mint(address(hook), 500e18);
 
-        token0.mint(address(aavePool), 200e18);
+        hook.exposedDistributeIdleToAave(poolId, Currency.wrap(address(token0)), aToken0, 200e18);
 
         token0.mint(address(poolManager), 100e18);
         token1.mint(address(hook), 200e18);
@@ -252,7 +241,8 @@ contract SentinelHookUnitTest is Test {
     }
 
     function testEmergencyWithdrawFromAave_EmitsEvent() public {
-        token0.mint(address(aavePool), 5e18);
+        token0.mint(address(hook), 5e18);
+        hook.exposedDistributeIdleToAave(poolId, Currency.wrap(address(token0)), aToken0, 5e18);
         hook.emergencyWithdrawFromAave(poolId);
         assertTrue(aavePool.withdrawCalled());
     }

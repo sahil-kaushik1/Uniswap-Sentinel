@@ -35,7 +35,7 @@ contract RatioOracle is AggregatorV3Interface {
     }
 
     function latestRoundData()
-        external
+        public
         view
         override
         returns (
