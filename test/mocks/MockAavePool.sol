@@ -1,68 +1,106 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IPool} from "../../src/libraries/AaveAdapter.sol";
-import {IERC20} from "forge-std/interfaces/IERC20.sol";
+import {ERC20} from "solmate/src/tokens/ERC20.sol";
+import {SafeTransferLib} from "solmate/src/utils/SafeTransferLib.sol";
 
-contract MockAavePool is IPool {
-    bool public revertSupply;
-    bool public revertWithdraw;
-    bool public revertIncome;
-    uint256 public normalizedIncome;
+contract MockAToken is ERC20 {
+    address public pool;
+    address public underlyingAsset;
 
-    bool public supplyCalled;
-    bool public withdrawCalled;
-    address public lastAsset;
-    uint256 public lastAmount;
-    address public lastRecipient;
-
-    constructor() {
-        normalizedIncome = 1e27;
+    constructor(
+        string memory _name,
+        string memory _symbol,
+        uint8 _decimals,
+        address _pool,
+        address _underlying
+    ) ERC20(_name, _symbol, _decimals) {
+        pool = _pool;
+        underlyingAsset = _underlying;
     }
 
-    function setRevertSupply(bool value) external {
-        revertSupply = value;
+    modifier onlyPool() {
+        require(msg.sender == pool, "Only Pool");
+        _;
     }
 
-    function setRevertWithdraw(bool value) external {
-        revertWithdraw = value;
+    function mint(address to, uint256 amount) external onlyPool {
+        _mint(to, amount);
     }
 
-    function setRevertIncome(bool value) external {
-        revertIncome = value;
+    function burn(address from, uint256 amount) external onlyPool {
+        _burn(from, amount);
+    }
+}
+
+contract MockAavePool {
+    using SafeTransferLib for ERC20;
+
+    mapping(address => address) public assetToAToken;
+
+    function initReserve(
+        address asset,
+        string memory name,
+        string memory symbol
+    ) external returns (address) {
+        ERC20 underlying = ERC20(asset);
+        MockAToken aToken = new MockAToken(
+            name,
+            symbol,
+            underlying.decimals(),
+            address(this),
+            asset
+        );
+        assetToAToken[asset] = address(aToken);
+        return address(aToken);
     }
 
-    function setNormalizedIncome(uint256 value) external {
-        normalizedIncome = value;
+    function supply(
+        address asset,
+        uint256 amount,
+        address onBehalfOf,
+        uint16 /*referralCode*/
+    ) external {
+        address aTokenAddr = assetToAToken[asset];
+        require(aTokenAddr != address(0), "Reserve not initialized");
+
+        // Transfer Asset from sender to this pool
+        ERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
+
+        // Mint aTokens
+        MockAToken(aTokenAddr).mint(onBehalfOf, amount);
     }
 
-    function supply(address asset, uint256 amount, address onBehalfOf, uint16) external override {
-        if (revertSupply) revert("SUPPLY_FAIL");
-        supplyCalled = true;
-        lastAsset = asset;
-        lastAmount = amount;
-        lastRecipient = onBehalfOf;
-        if (amount > 0) {
-            IERC20(asset).transferFrom(msg.sender, address(this), amount);
+    function withdraw(
+        address asset,
+        uint256 amount,
+        address to
+    ) external returns (uint256) {
+        address aTokenAddr = assetToAToken[asset];
+        require(aTokenAddr != address(0), "Reserve not initialized");
+
+        MockAToken aToken = MockAToken(aTokenAddr);
+        uint256 userBalance = aToken.balanceOf(msg.sender);
+
+        uint256 amountToWithdraw = amount;
+        if (amount == type(uint256).max) {
+            amountToWithdraw = userBalance;
         }
+
+        require(userBalance >= amountToWithdraw, "Insufficient balance");
+
+        // Burn aTokens
+        aToken.burn(msg.sender, amountToWithdraw);
+
+        // Transfer underlying to user
+        ERC20(asset).safeTransfer(to, amountToWithdraw);
+
+        return amountToWithdraw;
     }
 
-    function withdraw(address asset, uint256 amount, address to) external override returns (uint256) {
-        if (revertWithdraw) revert("WITHDRAW_FAIL");
-        withdrawCalled = true;
-        lastAsset = asset;
-        lastAmount = amount;
-        lastRecipient = to;
-        uint256 balance = IERC20(asset).balanceOf(address(this));
-        uint256 toSend = amount == type(uint256).max ? balance : (amount > balance ? balance : amount);
-        if (toSend > 0) {
-            IERC20(asset).transfer(to, toSend);
-        }
-        return toSend;
-    }
-
-    function getReserveNormalizedIncome(address) external view override returns (uint256) {
-        if (revertIncome) revert("INCOME_FAIL");
-        return normalizedIncome;
+    function getReserveNormalizedIncome(
+        address /*asset*/
+    ) external pure returns (uint256) {
+        return 1e27; // 1.0 ray
     }
 }
