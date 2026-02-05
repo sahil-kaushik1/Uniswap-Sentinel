@@ -252,16 +252,8 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     /// @notice Initialize Sentinel management for a pool
     /// @param key The pool key
     /// @param priceFeed Chainlink oracle address for this pair
-    /// @param yieldCurrency Which token to deposit to Aave
-    /// @param aToken The corresponding aToken address
-    /// @param maxDeviationBps Maximum price deviation allowed (circuit breaker)
-    /// @param initialTickLower Initial lower tick for active range
-    /// @param initialTickUpper Initial upper tick for active range
-    /// @notice Initialize Sentinel management for a pool
-    /// @param key The pool key
-    /// @param priceFeed Chainlink oracle address for this pair
-    /// @param aToken0 The aToken address for currency0 (or address(0) to skip yield)
-    /// @param aToken1 The aToken address for currency1 (or address(0) to skip yield)
+    /// @param aToken0 The corresponding aToken address
+    /// @param aToken1 The corresponding aToken address
     /// @param maxDeviationBps Maximum price deviation allowed (circuit breaker)
     /// @param initialTickLower Initial lower tick for active range
     /// @param initialTickUpper Initial upper tick for active range
