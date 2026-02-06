@@ -1,21 +1,34 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
-// Note: AggregatorV3Interface not needed here - oracle checks are in SentinelHook
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
-/// @notice Interface for Chainlink Automation compatibility
-interface AutomationCompatibleInterface {
-    function checkUpkeep(
-        bytes calldata checkData
-    ) external returns (bool upkeepNeeded, bytes memory performData);
+// ============================================================================
+// CHAINLINK INTERFACES
+// ============================================================================
 
-    function performUpkeep(bytes calldata performData) external;
+interface IFunctionsRouter {
+    function sendRequest(
+        uint64 subscriptionId,
+        bytes calldata data,
+        uint16 dataVersion,
+        uint32 callbackGasLimit,
+        bytes32 donId
+    ) external returns (bytes32 requestId);
 }
 
-/// @notice Minimal interface for SentinelHook
+interface IFunctionsClient {
+    function handleOracleFulfillment(
+        bytes32 requestId,
+        bytes memory response,
+        bytes memory err
+    ) external;
+}
+
+// ============================================================================
+// SENTINEL HOOK INTERFACE
+// ============================================================================
+
 interface ISentinelHook {
     function maintain(
         PoolId poolId,
@@ -30,424 +43,293 @@ interface ISentinelHook {
         external
         view
         returns (
-            int24 activeTickLower,
-            int24 activeTickUpper,
-            uint128 activeLiquidity,
-            address priceFeed,
-            uint256 maxDeviationBps,
-            address aToken0,
-            address aToken1,
-            address currency0,
-            address currency1,
-            uint256 totalShares,
-            bool isInitialized
+            int24,
+            int24,
+            uint128,
+            address,
+            uint256,
+            address,
+            address,
+            address,
+            address,
+            uint256,
+            bool
         );
 }
 
+// ============================================================================
+// SENTINEL AUTOMATION - MULTI-POOL
+// ============================================================================
+
 /// @title SentinelAutomation
-/// @notice Chainlink Automation compatible contract for Sentinel rebalancing
-/// @dev Implements the Chainlink Automation interface to automatically rebalance
-///      Sentinel-managed Uniswap v4 pools when price moves out of range
-contract SentinelAutomation is AutomationCompatibleInterface {
-    using StateLibrary for IPoolManager;
-    using PoolIdLibrary for PoolId;
+/// @notice Chainlink Automation + Functions for 3 pools: ETH/USDC, WBTC/ETH, ETH/USDT
+contract SentinelAutomation is IFunctionsClient {
+    // ========== CONSTANTS ==========
+    uint8 public constant MAX_POOLS = 3;
 
-    // ============================================================================
-    // STATE VARIABLES
-    // ============================================================================
+    // Pool Types
+    uint8 public constant POOL_ETH_USDC = 0;
+    uint8 public constant POOL_WBTC_ETH = 1;
+    uint8 public constant POOL_ETH_USDT = 2;
 
-    /// @notice The SentinelHook contract
+    // ========== STATE ==========
     ISentinelHook public immutable hook;
-
-    /// @notice The Uniswap v4 PoolManager
-    IPoolManager public immutable poolManager;
-
-    /// @notice List of tracked pool IDs
-    PoolId[] public trackedPools;
-
-    /// @notice Mapping to check if a pool is tracked
-    mapping(PoolId => bool) public isTracked;
-
-    /// @notice Mapping to track pool index in array (for removal)
-    mapping(PoolId => uint256) public poolIndex;
-
-    /// @notice Minimum time between checks (rate limiting)
-    uint256 public checkInterval = 60; // 60 seconds
-
-    /// @notice Last check timestamp
-    uint256 public lastCheckTime;
-
-    /// @notice Default tick width for new ranges (~6% range)
-    int24 public defaultTickWidth = 600;
-
-    /// @notice Default tick spacing (matches pool tick spacing)
-    int24 public tickSpacing = 60;
-
-    /// @notice Edge threshold percentage (20% of range = proactive rebalance)
-    uint256 public edgeThresholdBps = 2000; // 20%
-
-    /// @notice Contract owner
+    IFunctionsRouter public immutable router;
     address public owner;
 
-    // ============================================================================
-    // EVENTS
-    // ============================================================================
+    // Pool Configuration
+    struct PoolConfig {
+        PoolId poolId;
+        uint8 poolType; // 0=ETH_USDC, 1=WBTC_ETH, 2=ETH_USDT
+        bool active;
+    }
+    PoolConfig[3] public pools;
+    uint8 public poolCount;
 
-    event PoolAdded(PoolId indexed poolId);
-    event PoolRemoved(PoolId indexed poolId);
-    event RebalanceTriggered(
-        PoolId indexed poolId,
+    // Chainlink Functions Config
+    bytes32 public donId;
+    uint64 public subscriptionId;
+    uint32 public gasLimit;
+    string public source;
+
+    // Request tracking
+    bytes32 public lastRequestId;
+    uint8 public pendingPoolIndex;
+    bool public requestPending;
+    uint8 public lastCheckedPool;
+
+    // ========== EVENTS ==========
+    event PoolAdded(uint8 indexed index, uint8 poolType, PoolId poolId);
+    event RebalanceRequested(bytes32 indexed requestId, uint8 poolIndex);
+    event RebalanceExecuted(
+        uint8 indexed poolIndex,
         int24 newLower,
-        int24 newUpper,
-        uint256 volatility
+        int24 newUpper
     );
-    event ConfigUpdated(string param, uint256 value);
-    event OwnershipTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
+    event RequestFailed(bytes32 indexed requestId, string reason);
 
-    // ============================================================================
-    // ERRORS
-    // ============================================================================
-
+    // ========== ERRORS ==========
     error Unauthorized();
-    error PoolNotTracked();
-    error PoolAlreadyTracked();
-    error InvalidPool();
-    error ZeroAddress();
+    error RequestAlreadyPending();
+    error OnlyRouter();
+    error MaxPoolsReached();
 
-    // ============================================================================
-    // CONSTRUCTOR
-    // ============================================================================
-
-    constructor(address _hook, address _poolManager) {
-        if (_hook == address(0) || _poolManager == address(0))
-            revert ZeroAddress();
-
+    // ========== CONSTRUCTOR ==========
+    constructor(
+        address _hook,
+        address _router,
+        bytes32 _donId,
+        uint64 _subscriptionId,
+        uint32 _gasLimit,
+        string memory _source
+    ) {
         hook = ISentinelHook(_hook);
-        poolManager = IPoolManager(_poolManager);
+        router = IFunctionsRouter(_router);
+        donId = _donId;
+        subscriptionId = _subscriptionId;
+        gasLimit = _gasLimit;
+        source = _source;
         owner = msg.sender;
-        lastCheckTime = block.timestamp;
     }
 
-    // ============================================================================
-    // MODIFIERS
-    // ============================================================================
+    // ========== POOL MANAGEMENT ==========
+
+    function addPool(PoolId _poolId, uint8 _poolType) external onlyOwner {
+        if (poolCount >= MAX_POOLS) revert MaxPoolsReached();
+
+        pools[poolCount] = PoolConfig({
+            poolId: _poolId,
+            poolType: _poolType,
+            active: true
+        });
+
+        emit PoolAdded(poolCount, _poolType, _poolId);
+        poolCount++;
+    }
+
+    function setPoolActive(uint8 index, bool active) external onlyOwner {
+        pools[index].active = active;
+    }
+
+    // ========== AUTOMATION INTERFACE ==========
+
+    /// @notice Checks all 3 pools in round-robin fashion
+    function checkUpkeep(
+        bytes calldata
+    ) external view returns (bool upkeepNeeded, bytes memory performData) {
+        if (requestPending || poolCount == 0) return (false, "");
+
+        // Round-robin: check next pool after lastCheckedPool
+        for (uint8 i = 0; i < poolCount; i++) {
+            uint8 idx = (lastCheckedPool + 1 + i) % poolCount;
+
+            if (!pools[idx].active) continue;
+
+            // Check if pool is initialized
+            (, , , , , , , , , , bool isInit) = hook.poolStates(
+                pools[idx].poolId
+            );
+            if (!isInit) continue;
+
+            // This pool needs checking
+            return (true, abi.encode(idx));
+        }
+
+        return (false, "");
+    }
+
+    /// @notice Sends request to Chainlink Functions for specific pool
+    function performUpkeep(bytes calldata performData) external {
+        if (requestPending) revert RequestAlreadyPending();
+
+        uint8 poolIndex = abi.decode(performData, (uint8));
+        PoolConfig memory pool = pools[poolIndex];
+
+        // Build request with pool info
+        bytes memory request = _buildRequest(pool.poolType);
+
+        lastRequestId = router.sendRequest(
+            subscriptionId,
+            request,
+            1,
+            gasLimit,
+            donId
+        );
+
+        pendingPoolIndex = poolIndex;
+        requestPending = true;
+        lastCheckedPool = poolIndex;
+
+        emit RebalanceRequested(lastRequestId, poolIndex);
+    }
+
+    // ========== CHAINLINK FUNCTIONS CALLBACK ==========
+
+    function handleOracleFulfillment(
+        bytes32 requestId,
+        bytes memory response,
+        bytes memory err
+    ) external override {
+        if (msg.sender != address(router)) revert OnlyRouter();
+
+        uint8 poolIndex = pendingPoolIndex;
+        requestPending = false;
+
+        if (err.length > 0) {
+            emit RequestFailed(requestId, string(err));
+            return;
+        }
+
+        // Decode response
+        (int24 newLower, int24 newUpper, uint256 volatility) = _decodeResponse(
+            response
+        );
+
+        if (newLower == 0 && newUpper == 0) return;
+
+        // Execute rebalance for this pool
+        hook.maintain(pools[poolIndex].poolId, newLower, newUpper, volatility);
+
+        emit RebalanceExecuted(poolIndex, newLower, newUpper);
+    }
+
+    // ========== ADMIN ==========
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert Unauthorized();
         _;
     }
 
-    // ============================================================================
-    // ADMIN FUNCTIONS
-    // ============================================================================
-
-    /// @notice Add a pool to be tracked by automation
-    /// @param poolId The pool ID to track
-    function addPool(PoolId poolId) external onlyOwner {
-        if (isTracked[poolId]) revert PoolAlreadyTracked();
-
-        // Verify pool is initialized in hook
-        (, , , , , , , , , , bool isInitialized) = hook.poolStates(poolId);
-        if (!isInitialized) revert InvalidPool();
-
-        poolIndex[poolId] = trackedPools.length;
-        trackedPools.push(poolId);
-        isTracked[poolId] = true;
-
-        emit PoolAdded(poolId);
+    function setSource(string calldata _source) external onlyOwner {
+        source = _source;
     }
 
-    /// @notice Remove a pool from tracking
-    /// @param poolId The pool ID to remove
-    function removePool(PoolId poolId) external onlyOwner {
-        if (!isTracked[poolId]) revert PoolNotTracked();
-
-        // Swap with last element and pop (gas efficient removal)
-        uint256 index = poolIndex[poolId];
-        uint256 lastIndex = trackedPools.length - 1;
-
-        if (index != lastIndex) {
-            PoolId lastPool = trackedPools[lastIndex];
-            trackedPools[index] = lastPool;
-            poolIndex[lastPool] = index;
-        }
-
-        trackedPools.pop();
-        delete poolIndex[poolId];
-        isTracked[poolId] = false;
-
-        emit PoolRemoved(poolId);
+    function setConfig(
+        bytes32 _donId,
+        uint64 _subId,
+        uint32 _gasLimit
+    ) external onlyOwner {
+        donId = _donId;
+        subscriptionId = _subId;
+        gasLimit = _gasLimit;
     }
 
-    /// @notice Update check interval
-    function setCheckInterval(uint256 _interval) external onlyOwner {
-        checkInterval = _interval;
-        emit ConfigUpdated("checkInterval", _interval);
+    // ========== VIEW ==========
+
+    function getPool(uint8 index) external view returns (PoolId, uint8, bool) {
+        return (
+            pools[index].poolId,
+            pools[index].poolType,
+            pools[index].active
+        );
     }
 
-    /// @notice Update default tick width
-    function setDefaultTickWidth(int24 _width) external onlyOwner {
-        defaultTickWidth = _width;
-        emit ConfigUpdated("defaultTickWidth", uint256(int256(_width)));
+    // ========== INTERNAL ==========
+
+    function _buildRequest(
+        uint8 poolType
+    ) internal view returns (bytes memory) {
+        bytes memory sourceBytes = bytes(source);
+        bytes memory poolTypeArg = abi.encodePacked(poolType);
+
+        // CBOR with source and args
+        return
+            abi.encodePacked(
+                bytes1(0xa2), // Map with 2 elements
+                bytes1(0x00), // Key: 0 (source)
+                bytes1(0x78),
+                uint8(sourceBytes.length > 255 ? 255 : sourceBytes.length),
+                sourceBytes,
+                bytes1(0x01), // Key: 1 (args)
+                bytes1(0x81), // Array of 1 element
+                bytes1(0x00 + poolType) // Pool type as integer
+            );
     }
 
-    /// @notice Update tick spacing
-    function setTickSpacing(int24 _spacing) external onlyOwner {
-        tickSpacing = _spacing;
-        emit ConfigUpdated("tickSpacing", uint256(int256(_spacing)));
+    function _decodeResponse(
+        bytes memory response
+    ) internal pure returns (int24, int24, uint256) {
+        string memory resp = string(response);
+        int24 newLower = _extractInt24(resp, "newLower");
+        int24 newUpper = _extractInt24(resp, "newUpper");
+        uint256 volatility = uint256(
+            int256(_extractInt24(resp, "volatilityBps"))
+        );
+        return (newLower, newUpper, volatility);
     }
 
-    /// @notice Update edge threshold
-    function setEdgeThresholdBps(uint256 _bps) external onlyOwner {
-        edgeThresholdBps = _bps;
-        emit ConfigUpdated("edgeThresholdBps", _bps);
-    }
+    function _extractInt24(
+        string memory json,
+        string memory key
+    ) internal pure returns (int24) {
+        bytes memory jsonBytes = bytes(json);
+        bytes memory keyBytes = bytes(key);
 
-    /// @notice Transfer ownership
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert ZeroAddress();
-        emit OwnershipTransferred(owner, newOwner);
-        owner = newOwner;
-    }
+        for (uint256 i = 0; i < jsonBytes.length - keyBytes.length; i++) {
+            bool isMatch = true;
+            for (uint256 j = 0; j < keyBytes.length && isMatch; j++) {
+                if (jsonBytes[i + j] != keyBytes[j]) isMatch = false;
+            }
+            if (isMatch) {
+                uint256 pos = i + keyBytes.length;
+                while (pos < jsonBytes.length && jsonBytes[pos] != 0x3a) pos++;
+                pos++;
+                while (pos < jsonBytes.length && jsonBytes[pos] == 0x20) pos++;
 
-    // ============================================================================
-    // CHAINLINK AUTOMATION INTERFACE
-    // ============================================================================
+                bool neg = jsonBytes[pos] == 0x2d;
+                if (neg) pos++;
 
-    /// @notice Called by Chainlink Automation nodes to check if upkeep is needed
-    /// @dev This function should NOT modify state
-    /// @return upkeepNeeded True if a pool needs rebalancing
-    /// @return performData Encoded data for performUpkeep
-    function checkUpkeep(
-        bytes calldata /* checkData */
-    )
-        external
-        view
-        override
-        returns (bool upkeepNeeded, bytes memory performData)
-    {
-        // Rate limiting - don't check too frequently
-        if (block.timestamp < lastCheckTime + checkInterval) {
-            return (false, "");
-        }
-
-        // Check each tracked pool
-        for (uint256 i = 0; i < trackedPools.length; i++) {
-            PoolId poolId = trackedPools[i];
-
-            (
-                bool needsRebalance,
-                int24 newLower,
-                int24 newUpper,
-                uint256 volatility
-            ) = _checkPoolNeedsRebalance(poolId);
-
-            if (needsRebalance) {
-                performData = abi.encode(
-                    poolId,
-                    newLower,
-                    newUpper,
-                    volatility
-                );
-                return (true, performData);
+                int256 val = 0;
+                while (pos < jsonBytes.length) {
+                    uint8 c = uint8(jsonBytes[pos]);
+                    if (c >= 0x30 && c <= 0x39) {
+                        val = val * 10 + int256(uint256(c - 0x30));
+                        pos++;
+                    } else break;
+                }
+                return int24(neg ? -val : val);
             }
         }
-
-        return (false, "");
-    }
-
-    /// @notice Called by Chainlink Automation to perform the upkeep
-    /// @dev This function DOES modify state
-    /// @param performData Encoded data from checkUpkeep
-    function performUpkeep(bytes calldata performData) external override {
-        (
-            PoolId poolId,
-            int24 newLower,
-            int24 newUpper,
-            uint256 volatility
-        ) = abi.decode(performData, (PoolId, int24, int24, uint256));
-
-        // Re-verify the pool still needs rebalancing (prevent frontrunning)
-        (bool stillNeeded, , , ) = _checkPoolNeedsRebalance(poolId);
-        if (!stillNeeded) return;
-
-        // Execute rebalance via hook
-        hook.maintain(poolId, newLower, newUpper, volatility);
-
-        // Update last check time
-        lastCheckTime = block.timestamp;
-
-        emit RebalanceTriggered(poolId, newLower, newUpper, volatility);
-    }
-
-    // ============================================================================
-    // INTERNAL LOGIC
-    // ============================================================================
-
-    /// @notice Check if a specific pool needs rebalancing
-    /// @param poolId The pool to check
-    /// @return needsRebalance True if rebalance is needed
-    /// @return newLower New lower tick
-    /// @return newUpper New upper tick
-    /// @return volatility Estimated volatility (basis points)
-    function _checkPoolNeedsRebalance(
-        PoolId poolId
-    )
-        internal
-        view
-        returns (
-            bool needsRebalance,
-            int24 newLower,
-            int24 newUpper,
-            uint256 volatility
-        )
-    {
-        // Get hook state
-        (
-            int24 activeTickLower,
-            int24 activeTickUpper,
-            , // activeLiquidity
-            , // priceFeed
-            , // maxDeviationBps
-            , // aToken0
-            , // aToken1
-            , // currency0
-            , // currency1
-            , // totalShares
-            bool isInitialized
-        ) = hook.poolStates(poolId);
-
-        if (!isInitialized) {
-            return (false, 0, 0, 0);
-        }
-
-        // Get current tick from pool
-        (, int24 currentTick, , ) = poolManager.getSlot0(poolId);
-
-        // ===== SAFETY CHECK: Out of Range? =====
-        bool outOfRange = currentTick < activeTickLower ||
-            currentTick > activeTickUpper;
-
-        if (outOfRange) {
-            // URGENT: Price is outside active range
-            // Calculate new centered range
-            newLower = _alignTick(currentTick - defaultTickWidth);
-            newUpper = _alignTick(currentTick + defaultTickWidth);
-            volatility = 1500; // Assume high volatility when out of range (15%)
-            return (true, newLower, newUpper, volatility);
-        }
-
-        // ===== OPTIMIZATION CHECK: Near Edge? =====
-        int24 rangeWidth = activeTickUpper - activeTickLower;
-        int24 edgeThreshold = int24(
-            int256((uint256(int256(rangeWidth)) * edgeThresholdBps) / 10000)
-        );
-
-        int24 distanceToLower = currentTick - activeTickLower;
-        int24 distanceToUpper = activeTickUpper - currentTick;
-
-        bool nearLowerEdge = distanceToLower < edgeThreshold;
-        bool nearUpperEdge = distanceToUpper < edgeThreshold;
-
-        if (nearLowerEdge || nearUpperEdge) {
-            // Proactive rebalance - price near edge
-            newLower = _alignTick(currentTick - defaultTickWidth);
-            newUpper = _alignTick(currentTick + defaultTickWidth);
-            volatility = 1000; // Medium volatility (10%)
-            return (true, newLower, newUpper, volatility);
-        }
-
-        // Price is comfortably in range - no action needed
-        return (false, 0, 0, 0);
-    }
-
-    /// @notice Align a tick to the tick spacing
-    /// @param tick The tick to align
-    /// @return aligned The aligned tick
-    function _alignTick(int24 tick) internal view returns (int24 aligned) {
-        // Round towards zero
-        aligned = (tick / tickSpacing) * tickSpacing;
-    }
-
-    // ============================================================================
-    // VIEW FUNCTIONS
-    // ============================================================================
-
-    /// @notice Get the number of tracked pools
-    function getTrackedPoolCount() external view returns (uint256) {
-        return trackedPools.length;
-    }
-
-    /// @notice Get all tracked pools
-    function getTrackedPools() external view returns (PoolId[] memory) {
-        return trackedPools;
-    }
-
-    /// @notice Get the status of a specific pool
-    /// @param poolId The pool to check
-    function getPoolStatus(
-        PoolId poolId
-    )
-        external
-        view
-        returns (
-            bool tracked,
-            bool needsRebalance,
-            int24 currentTick,
-            int24 activeLower,
-            int24 activeUpper,
-            int24 suggestedLower,
-            int24 suggestedUpper
-        )
-    {
-        tracked = isTracked[poolId];
-
-        if (!tracked) {
-            return (false, false, 0, 0, 0, 0, 0);
-        }
-
-        (activeLower, activeUpper, , , , , , , , , ) = hook.poolStates(poolId);
-        (, currentTick, , ) = poolManager.getSlot0(poolId);
-
-        (
-            needsRebalance,
-            suggestedLower,
-            suggestedUpper,
-
-        ) = _checkPoolNeedsRebalance(poolId);
-    }
-
-    /// @notice Simulate a rebalance check without state changes
-    /// @param poolId The pool to simulate
-    function simulateCheck(
-        PoolId poolId
-    )
-        external
-        view
-        returns (
-            bool wouldRebalance,
-            int24 newLower,
-            int24 newUpper,
-            uint256 volatility,
-            string memory reason
-        )
-    {
-        (
-            wouldRebalance,
-            newLower,
-            newUpper,
-            volatility
-        ) = _checkPoolNeedsRebalance(poolId);
-
-        if (!wouldRebalance) {
-            reason = "Price comfortably in range";
-        } else if (volatility == 1500) {
-            reason = "URGENT: Price out of range";
-        } else {
-            reason = "Proactive: Price near edge";
-        }
+        return 0;
     }
 }
