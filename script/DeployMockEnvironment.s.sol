@@ -150,6 +150,7 @@ contract DeployMockEnvironment is Script {
         hook.initializePool(
             key1,
             SEPOLIA_ETH_USD,
+            true,
             aToken0, // Enable Yield for Token0
             aToken1, // Enable Yield for Token1
             500,
@@ -174,6 +175,7 @@ contract DeployMockEnvironment is Script {
         hook.initializePool(
             key2,
             address(btcEthOracle),
+            false,
             aToken0,
             aToken1,
             500,
@@ -198,6 +200,7 @@ contract DeployMockEnvironment is Script {
         hook.initializePool(
             key3,
             SEPOLIA_ETH_USD,
+            true,
             aToken0,
             aToken1,
             500,

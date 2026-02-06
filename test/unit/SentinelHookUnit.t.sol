@@ -63,7 +63,7 @@ contract SentinelHookUnitTest is Test {
 
         poolManager.setSlot0(poolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
 
-        hook.initializePool(key, address(oracle), aToken0, address(0), 500, -120, 120);
+        hook.initializePool(key, address(oracle), false, aToken0, address(0), 500, -120, 120);
     }
 
     function testInitializePool_Unauthorized() public {
@@ -80,7 +80,7 @@ contract SentinelHookUnitTest is Test {
 
         vm.prank(makeAddr("attacker"));
         vm.expectRevert(SentinelHook.Unauthorized.selector);
-        hook.initializePool(otherKey, address(oracle), aToken0, address(0), 500, -120, 120);
+        hook.initializePool(otherKey, address(oracle), false, aToken0, address(0), 500, -120, 120);
     }
 
     function testInitializePool_StoresATokens() public {
@@ -155,7 +155,7 @@ contract SentinelHookUnitTest is Test {
 
         poolManager.setSlot0(yieldPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
 
-        hook.initializePool(yieldKey, address(oracle), address(0), aYieldToken, 500, -120, 120);
+        hook.initializePool(yieldKey, address(oracle), false, address(0), aYieldToken, 500, -120, 120);
 
         yieldToken.mint(address(hook), 100e18);
         hook.setIdleBalances(yieldPoolId, 0, 100e18);
@@ -209,6 +209,27 @@ contract SentinelHookUnitTest is Test {
         poolManager.callBeforeSwap(key, params);
     }
 
+    function testBeforeSwap_InvertedFeedMatchesPool() public {
+        PoolKey memory invKey = PoolKey({
+            currency0: Currency.wrap(address(token0)),
+            currency1: Currency.wrap(address(token1)),
+            fee: 3000,
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
+        });
+        PoolId invPoolId = invKey.toId();
+
+        // pool price = 0.5 (token1 per token0)
+        poolManager.setSlot0(invPoolId, TickMath.getSqrtPriceAtTick(-6931), -6931, 0, 3000);
+        hook.initializePool(invKey, address(oracle), true, address(0), address(0), 500, -120, 120);
+
+        // oracle returns 2.0 (token0 per token1); inverted => 0.5
+        oracle.setRoundData(1, 2e8, block.timestamp, block.timestamp, 1);
+
+        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        poolManager.callBeforeSwap(invKey, params);
+    }
+
     function testBeforeSwap_RespectsDecimalsScaling() public {
         MockERC20 usdc = new MockERC20("USDC", "USDC", 6);
         PoolKey memory decKey = PoolKey({
@@ -221,7 +242,7 @@ contract SentinelHookUnitTest is Test {
         PoolId decPoolId = decKey.toId();
 
         poolManager.setSlot0(decPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
-        hook.initializePool(decKey, address(oracle), address(0), address(0), 500, -120, 120);
+        hook.initializePool(decKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         // Oracle price = 1.0 (1e8) should match pool price after decimals scaling
         oracle.setRoundData(1, 1e8, block.timestamp, block.timestamp, 1);
@@ -293,6 +314,21 @@ contract SentinelHookUnitTest is Test {
 
         vm.expectRevert(YieldRouter.InsufficientLiquidity.selector);
         hook.exposedHandleMaintain(poolId, -120, 120, 500);
+    }
+
+    function testHandleMaintain_UsesValueBasedAllocation() public {
+        // set price to ~100 token1 per token0
+        poolManager.setSlot0(poolId, TickMath.getSqrtPriceAtTick(46054), 46054, 0, 3000);
+
+        hook.setIdleBalances(poolId, 20e18, 0);
+
+        // simulate liquidity spend from token0
+        poolManager.setCurrencyDelta(address(hook), Currency.wrap(address(token0)), -int256(14e18));
+
+        hook.exposedHandleMaintain(poolId, 45900, 46200, 0);
+
+        SentinelHook.PoolState memory state = hook.getPoolState(poolId);
+        assertEq(state.idle0, 6e18);
     }
 
     function testSettleOrTake_NativeCurrency() public {
@@ -368,6 +404,34 @@ contract SentinelHookUnitTest is Test {
         assertTrue(value > 0);
     }
 
+    function testCreditIdle_IncreasesSharePrice() public {
+        token0.mint(lp, 10e18);
+        token1.mint(lp, 10e18);
+
+        vm.startPrank(lp);
+        token0.approve(address(hook), 10e18);
+        token1.approve(address(hook), 10e18);
+        hook.depositLiquidity(key, 10e18, 10e18);
+        vm.stopPrank();
+
+        uint256 priceBefore = hook.getSharePrice(poolId);
+
+        token0.mint(address(hook), 5e18);
+        uint256 priceUnchanged = hook.getSharePrice(poolId);
+        assertEq(priceUnchanged, priceBefore);
+
+        hook.creditIdle(poolId, 5e18, 0);
+
+        uint256 priceAfter = hook.getSharePrice(poolId);
+        assertTrue(priceAfter > priceBefore);
+    }
+
+    function testCreditIdle_UnauthorizedReverts() public {
+        vm.prank(makeAddr("attacker"));
+        vm.expectRevert(SentinelHook.Unauthorized.selector);
+        hook.creditIdle(poolId, 1, 0);
+    }
+
     function testGetPoolByIndex() public {
         assertEq(hook.getTotalPools(), 1);
         PoolId fetched = hook.getPoolByIndex(0);
@@ -401,7 +465,7 @@ contract SentinelHookUnitTest is Test {
         PoolId nativePoolId = nativeKey.toId();
 
         poolManager.setSlot0(nativePoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
-        hook.initializePool(nativeKey, address(oracle), address(0), address(0), 500, -120, 120);
+        hook.initializePool(nativeKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         token1.mint(lp, 2e18);
 
@@ -427,7 +491,7 @@ contract SentinelHookUnitTest is Test {
         PoolId otherPoolId = otherKey.toId();
 
         poolManager.setSlot0(otherPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 500);
-        hook.initializePool(otherKey, address(oracle), address(0), address(0), 500, -120, 120);
+        hook.initializePool(otherKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         token0.mint(lp, 10e18);
         token2.mint(lp, 10e18);
@@ -461,7 +525,7 @@ contract SentinelHookUnitTest is Test {
         PoolId otherPoolId = otherKey.toId();
 
         poolManager.setSlot0(otherPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 500);
-        hook.initializePool(otherKey, address(oracle), address(0), address(0), 500, -120, 120);
+        hook.initializePool(otherKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         token0.mint(lp, 10e18);
         token1.mint(lp, 10e18);
@@ -495,7 +559,7 @@ contract SentinelHookUnitTest is Test {
         PoolId otherPoolId = otherKey.toId();
 
         poolManager.setSlot0(otherPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 500);
-        hook.initializePool(otherKey, address(oracle), address(0), address(0), 500, -120, 120);
+        hook.initializePool(otherKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         hook.setActiveLiquidity(otherPoolId, 1000);
         hook.setTotalShares(otherPoolId, 100);
@@ -521,7 +585,7 @@ contract SentinelHookUnitTest is Test {
         PoolId otherPoolId = otherKey.toId();
 
         poolManager.setSlot0(otherPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 500);
-        hook.initializePool(otherKey, address(oracle), address(0), address(0), 500, -120, 120);
+        hook.initializePool(otherKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         hook.setIdleBalances(otherPoolId, 7e18, 0);
         hook.setIdleBalances(poolId, 10e18, 10e18);
@@ -545,7 +609,7 @@ contract SentinelHookUnitTest is Test {
         PoolId otherPoolId = otherKey.toId();
 
         poolManager.setSlot0(otherPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 500);
-        hook.initializePool(otherKey, address(oracle), address(0), address(0), 500, -120, 120);
+        hook.initializePool(otherKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         hook.setActiveLiquidity(otherPoolId, 1000);
         hook.setTicks(otherPoolId, -120, 120);

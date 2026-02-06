@@ -64,6 +64,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint128 activeLiquidity;
         // Oracle & Safety
         address priceFeed; // Chainlink oracle for this pair
+        bool priceFeedInverted; // If oracle returns token0 per token1
         uint256 maxDeviationBps; // Pool-specific deviation threshold
         // Yield Configuration
         // Map pool token -> aToken (address(0) if no yield market)
@@ -97,6 +98,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     event PoolInitialized(
         PoolId indexed poolId,
         address priceFeed,
+        bool priceFeedInverted,
         address aToken0,
         address aToken1
     );
@@ -276,6 +278,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     function initializePool(
         PoolKey calldata key,
         address priceFeed,
+        bool priceFeedInverted,
         address aToken0,
         address aToken1,
         uint256 maxDeviationBps,
@@ -294,6 +297,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         state.activeTickUpper = initialTickUpper;
         state.activeLiquidity = 0;
         state.priceFeed = priceFeed;
+        state.priceFeedInverted = priceFeedInverted;
         state.maxDeviationBps = maxDeviationBps;
         state.aToken0 = aToken0;
         state.aToken1 = aToken1;
@@ -313,7 +317,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // Track this pool
         allPools.push(poolId);
 
-        emit PoolInitialized(poolId, priceFeed, aToken0, aToken1);
+        emit PoolInitialized(poolId, priceFeed, priceFeedInverted, aToken0, aToken1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -603,11 +607,14 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint256 poolPrice = _estimatePoolPrice(poolId, state.priceFeed);
 
         // Check oracle price deviation - reverts if too high
-        OracleLib.checkPriceDeviation(
-            AggregatorV3Interface(state.priceFeed),
-            poolPrice,
-            state.maxDeviationBps
+        uint256 oraclePrice = OracleLib.getOraclePrice(
+            AggregatorV3Interface(state.priceFeed)
         );
+        if (state.priceFeedInverted) {
+            oraclePrice = FullMath.mulDiv(1e36, 1, oraclePrice);
+        }
+
+        _checkPriceDeviation(poolPrice, oraclePrice, state.maxDeviationBps);
 
         // Check if tick crossed range boundary
         _checkTickCrossing(poolId, state);
@@ -714,29 +721,38 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // 3. Calculate and deploy to new range using YieldRouter
         (, int24 currentTick, , ) = StateLibrary.getSlot0(poolManager, poolId);
 
-        uint256 totalBalance = state.idle0 + state.idle1;
-        uint256 targetIdleTotal = 0;
-        if (totalBalance > 0) {
+        uint256 poolPrice = _estimatePoolPrice(poolId, state.priceFeed);
+
+        uint256 idle0Value = FullMath.mulDiv(state.idle0, poolPrice, 1e18);
+        uint256 idle1Value = state.idle1;
+        uint256 totalValue = idle0Value + idle1Value;
+
+        uint256 targetIdleValue = 0;
+        if (totalValue > 0) {
             (, int256 idleAmount) = YieldRouter.calculateIdealRatio(
-                totalBalance,
+                totalValue,
                 newLower,
                 newUpper,
                 currentTick,
                 volatility
             );
             if (idleAmount > 0) {
-                targetIdleTotal = uint256(idleAmount);
-                if (targetIdleTotal > totalBalance) {
-                    targetIdleTotal = totalBalance;
+                targetIdleValue = uint256(idleAmount);
+                if (targetIdleValue > totalValue) {
+                    targetIdleValue = totalValue;
                 }
             }
         }
 
         uint256 targetIdle0 = 0;
         uint256 targetIdle1 = 0;
-        if (totalBalance > 0 && targetIdleTotal > 0) {
-            targetIdle0 = (targetIdleTotal * state.idle0) / totalBalance;
-            targetIdle1 = targetIdleTotal - targetIdle0;
+        if (totalValue > 0 && targetIdleValue > 0) {
+            uint256 targetIdle0Value =
+                (targetIdleValue * idle0Value) / totalValue;
+            uint256 targetIdle1Value = targetIdleValue - targetIdle0Value;
+
+            targetIdle0 = FullMath.mulDiv(targetIdle0Value, 1e18, poolPrice);
+            targetIdle1 = targetIdle1Value;
         }
 
         uint256 deploy0 = state.idle0 > targetIdle0
@@ -1085,6 +1101,24 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
     }
 
+    function _checkPriceDeviation(
+        uint256 poolPrice,
+        uint256 oraclePrice,
+        uint256 maxDeviationBps
+    ) internal pure {
+        if (poolPrice == 0 || oraclePrice == 0) {
+            revert PriceDeviationTooHigh();
+        }
+
+        uint256 diff = poolPrice > oraclePrice
+            ? poolPrice - oraclePrice
+            : oraclePrice - poolPrice;
+        uint256 avg = (poolPrice + oraclePrice) / 2;
+        uint256 deviationBps = (diff * 10000) / avg;
+
+        if (deviationBps > maxDeviationBps) revert PriceDeviationTooHigh();
+    }
+
     /// @notice Get PoolKey from PoolId (placeholder - needs proper implementation)
     /// @dev TODO: This is a simplified version - in production, store the full PoolKey or derive it properly.
     function _getPoolKey(PoolId poolId) internal view returns (PoolKey memory) {
@@ -1212,5 +1246,31 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
 
         emit IdleCapitalWithdrawn(poolId, address(aavePool), totalWithdrawn);
+    }
+
+    /// @notice Credit idle balances for a pool (owner-only reconciliation)
+    function creditIdle(
+        PoolId poolId,
+        uint256 amount0,
+        uint256 amount1
+    ) external {
+        if (msg.sender != owner) revert Unauthorized();
+        PoolState storage state = poolStates[poolId];
+        if (!state.isInitialized) revert PoolNotInitialized();
+
+        if (amount0 > 0) {
+            require(
+                state.currency0.balanceOf(address(this)) >= amount0,
+                "Insufficient balance0"
+            );
+            state.idle0 += amount0;
+        }
+        if (amount1 > 0) {
+            require(
+                state.currency1.balanceOf(address(this)) >= amount1,
+                "Insufficient balance1"
+            );
+            state.idle1 += amount1;
+        }
     }
 }

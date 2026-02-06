@@ -188,6 +188,7 @@ contract DeploySentinel is Script {
         sentinelHook.initializePool(
             key,
             SEPOLIA_ETH_USD_FEED,
+            true,
             address(0), // aToken0 (WETH) - No yield for now
             SEPOLIA_AUSDC, // aToken1 (USDC)
             500,
@@ -227,6 +228,7 @@ contract DeploySentinel is Script {
         sentinelHook.initializePool(
             key,
             SEPOLIA_LINK_USD_FEED,
+            true,
             address(0), // aToken0 (LINK)
             SEPOLIA_AUSDC, // aToken1 (USDC)
             800,

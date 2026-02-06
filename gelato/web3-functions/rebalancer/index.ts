@@ -115,6 +115,7 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
         activeTickLower,
         activeTickUpper,
         priceFeed,
+        priceFeedInverted,
         decimals0,
         decimals1,
         tickSpacing
@@ -169,9 +170,13 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
     }
 
     // Calculate the TRUE pool ratio
-    const poolRatio = priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000"
+    let poolRatio = priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000"
         ? priceA
         : config.calculateRatio(priceA, priceB);
+
+    if (priceFeedInverted) {
+        poolRatio = 1 / poolRatio;
+    }
     console.log(`   🎯 TRUE ${config.name} Ratio: ${poolRatio.toFixed(6)}`);
 
     // 5. Fetch Historical Prices for Volatility (48h)
