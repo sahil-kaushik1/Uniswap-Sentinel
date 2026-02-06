@@ -8,6 +8,7 @@ import {MockPoolManager} from "../mocks/MockPoolManager.sol";
 import {MockAavePool} from "../mocks/MockAavePool.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockOracle} from "../mocks/MockOracle.sol";
+import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -88,6 +89,11 @@ contract SentinelHookUnitTest is Test {
         SentinelHook.PoolState memory state = hook.getPoolState(poolId);
         assertEq(state.aToken0, aToken0);
         assertEq(state.aToken1, address(0));
+    }
+
+    function testInitializePool_DoubleInitReverts() public {
+        vm.expectRevert(SentinelHook.PoolAlreadyInitialized.selector);
+        hook.initializePool(key, address(oracle), false, aToken0, address(0), 500, -120, 120);
     }
 
     function testDepositLiquidity_RegistersLpAndMintsShares() public {
@@ -229,6 +235,22 @@ contract SentinelHookUnitTest is Test {
         poolManager.callBeforeSwap(key, params);
     }
 
+    function testBeforeSwap_RevertsOnAnsweredInRoundTooLow() public {
+        oracle.setRoundData(2, 1e8, block.timestamp, block.timestamp, 1);
+
+        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        vm.expectRevert(OracleLib.StaleOracleData.selector);
+        poolManager.callBeforeSwap(key, params);
+    }
+
+    function testBeforeSwap_RevertsOnOracleUpdatedAtZero() public {
+        oracle.setRoundData(1, 1e8, block.timestamp, 0, 1);
+
+        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        vm.expectRevert(OracleLib.StaleOracleData.selector);
+        poolManager.callBeforeSwap(key, params);
+    }
+
     function testBeforeSwap_RevertsOnInvalidOraclePrice() public {
         oracle.setRoundData(1, 0, block.timestamp, block.timestamp, 1);
 
@@ -316,6 +338,22 @@ contract SentinelHookUnitTest is Test {
         vm.prank(makeAddr("attacker"));
         vm.expectRevert(SentinelHook.Unauthorized.selector);
         hook.maintain(poolId, -100, 100, 500);
+    }
+
+    function testMaintain_PoolNotInitializedReverts() public {
+        MockERC20 token2 = new MockERC20("Token2", "TK2", 18);
+        PoolKey memory otherKey = PoolKey({
+            currency0: Currency.wrap(address(token0)),
+            currency1: Currency.wrap(address(token2)),
+            fee: 3000,
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
+        });
+        PoolId otherPoolId = otherKey.toId();
+
+        vm.prank(maintainer);
+        vm.expectRevert(SentinelHook.PoolNotInitialized.selector);
+        hook.maintain(otherPoolId, -100, 100, 500);
     }
 
     function testHandleMaintain_RevertsOnInvalidRange() public {
@@ -414,6 +452,40 @@ contract SentinelHookUnitTest is Test {
         assertEq(beforeState.aave0, 5e18);
         assertEq(afterState.aave0, 0);
         assertTrue(afterState.idle0 >= beforeState.idle0);
+    }
+
+    function testEmergencyWithdrawFromAave_DoesNotDrainOtherPools() public {
+        MockERC20 token2 = new MockERC20("Token2", "TK2", 18);
+        PoolKey memory otherKey = PoolKey({
+            currency0: Currency.wrap(address(token0)),
+            currency1: Currency.wrap(address(token2)),
+            fee: 500,
+            tickSpacing: 10,
+            hooks: IHooks(address(hook))
+        });
+        PoolId otherPoolId = otherKey.toId();
+
+        poolManager.setSlot0(otherPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 500);
+        hook.initializePool(otherKey, address(oracle), false, aToken0, address(0), 500, -120, 120);
+
+        token0.mint(address(hook), 40e18);
+        hook.setIdleBalances(poolId, 10e18, 0);
+        hook.setIdleBalances(otherPoolId, 30e18, 0);
+
+        hook.exposedDistributeIdleToAave(poolId, Currency.wrap(address(token0)), aToken0, 10e18);
+        hook.exposedDistributeIdleToAave(otherPoolId, Currency.wrap(address(token0)), aToken0, 30e18);
+
+        SentinelHook.PoolState memory beforeOther = hook.getPoolState(otherPoolId);
+
+        hook.emergencyWithdrawFromAave(poolId);
+
+        SentinelHook.PoolState memory afterPool = hook.getPoolState(poolId);
+        SentinelHook.PoolState memory afterOther = hook.getPoolState(otherPoolId);
+
+        assertEq(afterPool.aave0, 0);
+        assertEq(afterOther.aave0, beforeOther.aave0);
+        assertEq(IERC20(aToken0).balanceOf(address(hook)), afterOther.aave0);
+        assertEq(hook.aTokenTotalShares(aToken0), afterOther.aave0);
     }
 
     function testDistributeIdleToAave_RevertsOnSupplyFailure() public {

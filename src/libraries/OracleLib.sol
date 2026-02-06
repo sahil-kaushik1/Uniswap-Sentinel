@@ -104,9 +104,13 @@ library OracleLib {
     /// @param chainlinkFeed The Chainlink price feed
     /// @return price The current price from oracle
     function getOraclePrice(AggregatorV3Interface chainlinkFeed) internal view returns (uint256 price) {
-        (, int256 answer,, uint256 updatedAt,) = chainlinkFeed.latestRoundData();
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
+            chainlinkFeed.latestRoundData();
 
         // Validate freshness
+        if (updatedAt == 0 || answeredInRound < roundId) {
+            revert StaleOracleData();
+        }
         if (block.timestamp - updatedAt > MAX_ORACLE_STALENESS) {
             revert StaleOracleData();
         }

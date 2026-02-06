@@ -127,6 +127,27 @@ library AaveAdapter {
         }
     }
 
+    /// @notice Emergency withdraw a specific amount from Aave
+    /// @param pool The Aave pool address
+    /// @param asset The token to withdraw
+    /// @param amount The amount to withdraw
+    /// @param recipient The address that will receive the tokens
+    /// @return withdrawn The actual amount withdrawn
+    function emergencyWithdraw(
+        IPool pool,
+        address asset,
+        uint256 amount,
+        address recipient
+    ) internal returns (uint256 withdrawn) {
+        if (amount == 0) return 0;
+
+        try pool.withdraw(asset, amount, recipient) returns (uint256 withdrawnAmount) {
+            withdrawn = withdrawnAmount;
+        } catch {
+            withdrawn = 0;
+        }
+    }
+
     /// @notice Checks if Aave pool is healthy for deposits
     /// @param pool The Aave pool address
     /// @param asset The asset to check

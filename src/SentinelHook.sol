@@ -1331,9 +1331,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
                     state.aToken0,
                     address(this)
                 );
-                uint256 withdrawn0 = AaveAdapter.emergencyWithdrawAll(
+                uint256 withdrawn0 = AaveAdapter.emergencyWithdraw(
                     aavePool,
                     Currency.unwrap(state.currency0),
+                    poolClaim0,
                     address(this)
                 );
                 uint256 burned0 = _burnATokenShares(
@@ -1360,9 +1361,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
                     state.aToken1,
                     address(this)
                 );
-                uint256 withdrawn1 = AaveAdapter.emergencyWithdrawAll(
+                uint256 withdrawn1 = AaveAdapter.emergencyWithdraw(
                     aavePool,
                     Currency.unwrap(state.currency1),
+                    poolClaim1,
                     address(this)
                 );
                 uint256 burned1 = _burnATokenShares(
