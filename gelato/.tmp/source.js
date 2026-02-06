@@ -15,17 +15,58 @@ var ORACLE_ABI = [
 ];
 
 // web3-functions/rebalancer/index.ts
+var CHAINLINK_FEEDS = {
+  "ETH/USD": "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+  "BTC/USD": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43",
+  "USDC/USD": "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
+  "USDT/USD": "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E"
+  // Same as USDC on Sepolia
+};
+var POOL_CONFIGS = {
+  "ETH_USDC": {
+    name: "ETH/USDC",
+    token0Symbol: "ETH",
+    token1Symbol: "USDC",
+    oracleA: "ETH/USD",
+    oracleB: "USDC/USD",
+    calculateRatio: (ethPrice, usdcPrice) => ethPrice / (usdcPrice || 1)
+  },
+  "ETH_USDT": {
+    name: "ETH/USDT",
+    token0Symbol: "ETH",
+    token1Symbol: "USDT",
+    oracleA: "ETH/USD",
+    oracleB: "USDT/USD",
+    calculateRatio: (ethPrice, usdtPrice) => ethPrice / (usdtPrice || 1)
+  },
+  "BTC_ETH": {
+    name: "BTC/ETH",
+    token0Symbol: "BTC",
+    token1Symbol: "ETH",
+    oracleA: "BTC/USD",
+    oracleB: "ETH/USD",
+    calculateRatio: (btcPrice, ethPrice) => btcPrice / (ethPrice || 1)
+  }
+};
 Web3Function.onRun(async (context) => {
   const { userArgs } = context;
   const provider = new providers.StaticJsonRpcProvider("http://127.0.0.1:8545", 11155111);
   console.log("------------------------------------------");
-  console.log("\u{1F916} Sentinel Gelato Agent: Starting Run");
+  console.log("\u{1F916} Sentinel Multi-Pool Rebalancer");
   console.log("------------------------------------------");
   const poolId = userArgs.poolId;
   const hookAddress = userArgs.hookAddress;
+  const poolType = userArgs.poolType || "ETH_USDC";
   console.log(`\u{1F539} Inputs:`);
   console.log(`   - Pool ID: ${poolId}`);
+  console.log(`   - Pool Type: ${poolType}`);
   console.log(`   - Hook Address: ${hookAddress}`);
+  const config = POOL_CONFIGS[poolType];
+  if (!config) {
+    console.error(`\u274C Unknown pool type: ${poolType}`);
+    return { canExec: false, message: `Unknown pool type: ${poolType}` };
+  }
+  console.log(`   - Pool Name: ${config.name} (${config.token0Symbol}/${config.token1Symbol})`);
   if (!poolId || !hookAddress) {
     console.error("\u274C Error: Missing poolId or hookAddress");
     return { canExec: false, message: "Missing poolId or hookAddress" };
@@ -33,20 +74,11 @@ Web3Function.onRun(async (context) => {
   const hook = new Contract(hookAddress, SENTINEL_HOOK_ABI, provider);
   let poolState;
   if (poolId === "0xSIMULATE") {
-    console.log("\u26A0\uFE0F SIMULATION MODE DETECTED: Using Mock Pool State with REAL Sepolia Feeds");
+    console.log("\u26A0\uFE0F SIMULATION MODE DETECTED");
     poolState = {
-      activeTickLower: "73000",
-      // Corresponds to price ~1480 (Old mock price)
-      activeTickUpper: "76000",
-      // Corresponds to price ~2000
-      priceFeed: "0x694AA1769357215DE4FAC081bf1f309aDC325306",
-      // REAL Sepolia ETH/USD Feed
-      priceFeedUSDC: "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
-      // REAL Sepolia USDC/USD Feed
-      currency0: "0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c",
-      // REAL Sepolia WETH
-      currency1: "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8"
-      // REAL Sepolia USDC
+      activeTickLower: "-204000",
+      // Realistic for ETH/USDC
+      activeTickUpper: "-202000"
     };
     console.log("\u2705 Mocked Hook State Loaded");
   } else {
@@ -58,66 +90,64 @@ Web3Function.onRun(async (context) => {
       return { canExec: false, message: `Failed to get pool state: ${err.message}` };
     }
   }
-  const { activeTickLower, activeTickUpper, priceFeed, priceFeedUSDC, currency0, currency1 } = poolState;
+  const { activeTickLower, activeTickUpper } = poolState;
   console.log(`   - Active Range: [${activeTickLower}, ${activeTickUpper}]`);
-  console.log(`   - ETH/USD Feed: ${priceFeed}`);
-  console.log(`   - USDC/USD Feed: ${priceFeedUSDC || "Not Set (assuming $1.00)"}`);
-  console.log(`   - Currency0: ${currency0}`);
-  console.log(`   - Currency1: ${currency1}`);
-  console.log("\u{1F4E1} Fetching Dual Oracle Data...");
-  const oracleETH = new Contract(priceFeed, ORACLE_ABI, provider);
-  let ethPrice = 0;
+  console.log("\u{1F4E1} Fetching Oracle Data...");
+  const oracleAAddress = CHAINLINK_FEEDS[config.oracleA];
+  const oracleA = new Contract(oracleAAddress, ORACLE_ABI, provider);
+  let priceA = 0;
   let oracleDecimals = 8;
   try {
-    const [, answerETH] = await oracleETH.latestRoundData();
-    oracleDecimals = await oracleETH.decimals();
-    ethPrice = parseFloat(answerETH.toString()) / 10 ** oracleDecimals;
-    console.log(`   \u2705 ETH/USD: $${ethPrice.toFixed(2)}`);
+    const [, answerA] = await oracleA.latestRoundData();
+    oracleDecimals = await oracleA.decimals();
+    priceA = parseFloat(answerA.toString()) / 10 ** oracleDecimals;
+    console.log(`   \u2705 ${config.oracleA}: $${priceA.toFixed(2)}`);
   } catch (err) {
-    console.error(`\u274C ETH Oracle read failed: ${err.message}`);
-    return { canExec: false, message: `ETH Oracle read failed: ${err.message}` };
+    console.error(`\u274C ${config.oracleA} Oracle failed: ${err.message}`);
+    return { canExec: false, message: `${config.oracleA} Oracle failed` };
   }
-  let usdcPrice = 1;
-  if (priceFeedUSDC) {
+  let priceB = null;
+  if (config.oracleB) {
+    const oracleBAddress = CHAINLINK_FEEDS[config.oracleB];
+    const oracleB = new Contract(oracleBAddress, ORACLE_ABI, provider);
     try {
-      const oracleUSDC = new Contract(priceFeedUSDC, ORACLE_ABI, provider);
-      const [, answerUSDC] = await oracleUSDC.latestRoundData();
-      const usdcDecimals = await oracleUSDC.decimals();
-      usdcPrice = parseFloat(answerUSDC.toString()) / 10 ** usdcDecimals;
-      console.log(`   \u2705 USDC/USD: $${usdcPrice.toFixed(4)}`);
-      if (usdcPrice < 0.99 || usdcPrice > 1.01) {
-        console.warn(`   \u26A0\uFE0F USDC DEPEG DETECTED! Price: $${usdcPrice.toFixed(4)}`);
+      const [, answerB] = await oracleB.latestRoundData();
+      const decB = await oracleB.decimals();
+      priceB = parseFloat(answerB.toString()) / 10 ** decB;
+      console.log(`   \u2705 ${config.oracleB}: $${priceB.toFixed(4)}`);
+      if (config.oracleB.includes("USDC") || config.oracleB.includes("USDT")) {
+        if (priceB < 0.99 || priceB > 1.01) {
+          console.warn(`   \u26A0\uFE0F STABLECOIN DEPEG DETECTED! Price: $${priceB.toFixed(4)}`);
+        }
       }
     } catch (err) {
-      console.warn(`   \u26A0\uFE0F USDC Oracle failed, assuming $1.00`);
+      console.warn(`   \u26A0\uFE0F ${config.oracleB} Oracle failed, using fallback`);
+      priceB = config.oracleB.includes("USD") ? 1 : priceA;
     }
-  } else {
-    console.log(`   \u2139\uFE0F No USDC feed configured, assuming $1.00`);
   }
-  const oraclePrice = ethPrice / usdcPrice;
-  console.log(`   \u{1F3AF} TRUE ETH/USDC Ratio: ${oraclePrice.toFixed(4)} (ETH: $${ethPrice.toFixed(2)} / USDC: $${usdcPrice.toFixed(4)})`);
-  console.log("\u{1F4CA} Fetching Historical Prices (Last ~48h)...");
+  const poolRatio = config.calculateRatio(priceA, priceB);
+  console.log(`   \u{1F3AF} TRUE ${config.name} Ratio: ${poolRatio.toFixed(6)}`);
+  console.log("\u{1F4CA} Fetching 48h Historical Data...");
   let volatilityPercent = 5;
   try {
     const aggregatorABI = ["function aggregator() external view returns (address)"];
-    const proxyContract = new (await import("ethers")).Contract(priceFeed, aggregatorABI, provider);
-    let aggregatorAddress = priceFeed;
+    const proxyContract = new Contract(oracleAAddress, aggregatorABI, provider);
+    let aggregatorAddress = oracleAAddress;
     try {
       aggregatorAddress = await proxyContract.aggregator();
-      console.log(`   \u2139\uFE0F Resolved Aggregator: ${aggregatorAddress}`);
-    } catch (e) {
-      console.warn("   \u26A0\uFE0F Could not resolve aggregator, querying proxy directly");
+    } catch {
     }
     const currentBlock = await provider.getBlockNumber();
     const BLOCKS_48H = 14400;
+    const { utils } = await import("ethers");
     const logs = await provider.getLogs({
       address: aggregatorAddress,
-      topics: [(await import("ethers")).utils.id("AnswerUpdated(int256,uint256,uint256)")],
+      topics: [utils.id("AnswerUpdated(int256,uint256,uint256)")],
       fromBlock: currentBlock - BLOCKS_48H,
       toBlock: "latest"
     });
     if (logs.length > 0) {
-      console.log(`   \u2705 Found ${logs.length} price updates in last 48h`);
+      console.log(`   \u2705 Found ${logs.length} price updates`);
       const prices = logs.map((log) => {
         const priceBig = parseInt(log.topics[1], 16);
         return priceBig / 10 ** oracleDecimals;
@@ -129,29 +159,27 @@ Web3Function.onRun(async (context) => {
       console.log(`   \u{1F4C9} 48h Low: $${minP.toFixed(2)}`);
       console.log(`   \u26A1 Volatility: ${volatilityPercent.toFixed(2)}%`);
     } else {
-      console.log("   \u2139\uFE0F No price updates in last 48h (using default volatility: 5%)");
+      console.log("   \u2139\uFE0F No price updates found (using default volatility)");
     }
   } catch (err) {
-    console.warn("   \u26A0\uFE0F Could not fetch historical data (using default volatility: 5%)");
+    console.warn("   \u26A0\uFE0F Could not fetch historical data");
   }
   const ERC20_ABI = ["function decimals() external view returns (uint8)"];
-  const token0 = new Contract(currency0, ERC20_ABI, provider);
-  const token1 = new Contract(currency1, ERC20_ABI, provider);
-  let decimals0 = 18;
-  let decimals1 = 18;
-  try {
-    decimals0 = await token0.decimals();
-    decimals1 = await token1.decimals();
-    console.log(`\u2705 Fetched Token Decimals: ${decimals0} / ${decimals1}`);
-  } catch (err) {
-    console.warn("\u26A0\uFE0F Failed to fetch decimals, assuming 18");
+  let decimals0 = 18, decimals1 = 18;
+  if (poolType === "ETH_USDC" || poolType === "ETH_USDT") {
+    decimals0 = 18;
+    decimals1 = 6;
+  } else if (poolType === "BTC_ETH") {
+    decimals0 = 8;
+    decimals1 = 18;
   }
+  console.log(`   \u2705 Token Decimals: ${decimals0} / ${decimals1}`);
   const shift = decimals1 - decimals0;
-  const adjustedPrice = oraclePrice * 10 ** shift;
-  console.log(`\u{1F539} Math:`);
-  console.log(`   - Shift (Dec1 - Dec0): ${shift}`);
-  console.log(`   - Adjusted Price Ratio: ${adjustedPrice}`);
+  const adjustedPrice = poolRatio * 10 ** shift;
   const currentTick = Math.floor(Math.log(adjustedPrice) / Math.log(1.0001));
+  console.log(`\u{1F539} Math:`);
+  console.log(`   - Decimal Shift: ${shift}`);
+  console.log(`   - Adjusted Ratio: ${adjustedPrice.toExponential(4)}`);
   console.log(`   - Ideal Center Tick: ${currentTick}`);
   let widthTicks;
   let lungState;
@@ -168,50 +196,48 @@ Web3Function.onRun(async (context) => {
     widthTicks = 1e3;
     lungState = "MAXIMUM \u{1F534} (Extreme Vol > 30%)";
   }
-  const newLowerRaw = currentTick - widthTicks;
-  const newUpperRaw = currentTick + widthTicks;
   const TICK_SPACING = 60;
-  const newLower = Math.floor(newLowerRaw / TICK_SPACING) * TICK_SPACING;
-  const newUpper = Math.ceil(newUpperRaw / TICK_SPACING) * TICK_SPACING;
-  const widthBps = Math.round(widthTicks / 100) * 100;
-  console.log(`\u{1FAC1} LUNG STRATEGY (Dynamic Width):`);
-  console.log(`   - 48h Volatility: ${volatilityPercent.toFixed(2)}%`);
-  console.log(`   - Lung State: ${lungState}`);
-  console.log(`   - Width: ${widthTicks} ticks (~${(widthTicks * 0.01).toFixed(1)}%)`);
-  console.log(`   - Proposed New Range: [${newLower}, ${newUpper}]`);
+  const newLower = Math.floor((currentTick - widthTicks) / TICK_SPACING) * TICK_SPACING;
+  const newUpper = Math.ceil((currentTick + widthTicks) / TICK_SPACING) * TICK_SPACING;
+  console.log(`\u{1FAC1} LUNG STRATEGY:`);
+  console.log(`   - Volatility: ${volatilityPercent.toFixed(2)}%`);
+  console.log(`   - State: ${lungState}`);
+  console.log(`   - Width: ${widthTicks} ticks`);
+  console.log(`   - New Range: [${newLower}, ${newUpper}]`);
   const currentLower = parseInt(activeTickLower);
   const currentUpper = parseInt(activeTickUpper);
   const rangeWidth = currentUpper - currentLower;
   const safetyBuffer = rangeWidth * 0.1;
   const isSafe = currentTick > currentLower + safetyBuffer && currentTick < currentUpper - safetyBuffer;
-  console.log(`\u{1F539} Safety Check (Drift Analysis):`);
+  console.log(`\u{1F539} Safety Check:`);
   console.log(`   - Current Range: [${currentLower}, ${currentUpper}]`);
-  console.log(`   - Safe Zone Buffer: +/- ${safetyBuffer} ticks`);
-  console.log(`   - Is Tick ${currentTick} Safe? ${isSafe ? "YES" : "NO"}`);
+  console.log(`   - Is Tick ${currentTick} Safe? ${isSafe ? "YES \u2705" : "NO \u274C"}`);
   if (isSafe) {
-    const msg = `\u2705 Price safe. No rebalance.`;
-    console.log(msg);
-    return { canExec: false, message: msg };
+    console.log(`\u2705 Price safe. No rebalance needed.`);
+    return { canExec: false, message: "Price within safe range" };
   }
   console.log(`\u{1F680} TRIGGERING REBALANCE!`);
   if (poolId === "0xSIMULATE") {
     console.log(`\u2705 SIMULATION SUCCESS!`);
-    console.log(`   Would rebalance to: [${newLower}, ${newUpper}]`);
-    console.log(`   Based on price: $${oraclePrice}`);
+    console.log(`   Pool: ${config.name}`);
+    console.log(`   Ratio: ${poolRatio.toFixed(4)}`);
+    console.log(`   New Range: [${newLower}, ${newUpper}]`);
     return {
       canExec: false,
-      message: `\u2705 SIMULATION COMPLETE! Logic verified. Would rebalance to [${newLower}, ${newUpper}]`
+      message: `\u2705 SIMULATION COMPLETE! ${config.name} would rebalance to [${newLower}, ${newUpper}]`
     };
   }
   return {
     canExec: true,
-    callData: hook.interface.encodeFunctionData("maintain", [
-      poolId,
-      newLower,
-      newUpper,
-      BigInt(widthBps)
-      // Volatility param
-    ]),
-    message: `Rebalancing triggered! Price: ${oraclePrice}, New Range: [${newLower}, ${newUpper}]`
+    callData: [{
+      to: hookAddress,
+      data: hook.interface.encodeFunctionData("maintain", [
+        poolId,
+        newLower,
+        newUpper,
+        BigInt(widthTicks)
+      ])
+    }],
+    message: `Rebalancing ${config.name}! New Range: [${newLower}, ${newUpper}]`
   };
 });

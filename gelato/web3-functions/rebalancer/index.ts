@@ -5,25 +5,84 @@ import {
 import { Contract, providers } from "ethers";
 import { SENTINEL_HOOK_ABI, ORACLE_ABI } from "./abi";
 
+// ============================================================================
+// MULTI-POOL ORACLE CONFIGURATION
+// ============================================================================
+// Sepolia Chainlink Price Feeds
+const CHAINLINK_FEEDS: Record<string, string> = {
+    "ETH/USD": "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+    "BTC/USD": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43",
+    "USDC/USD": "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
+    "USDT/USD": "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E", // Same as USDC on Sepolia
+};
+
+// Pool type configurations
+interface PoolConfig {
+    name: string;
+    token0Symbol: string;
+    token1Symbol: string;
+    oracleA: string;  // First oracle feed key
+    oracleB: string | null;  // Second oracle feed key (null if token is USD-pegged)
+    calculateRatio: (priceA: number, priceB: number | null) => number;
+}
+
+const POOL_CONFIGS: Record<string, PoolConfig> = {
+    "ETH_USDC": {
+        name: "ETH/USDC",
+        token0Symbol: "ETH",
+        token1Symbol: "USDC",
+        oracleA: "ETH/USD",
+        oracleB: "USDC/USD",
+        calculateRatio: (ethPrice, usdcPrice) => ethPrice / (usdcPrice || 1),
+    },
+    "ETH_USDT": {
+        name: "ETH/USDT",
+        token0Symbol: "ETH",
+        token1Symbol: "USDT",
+        oracleA: "ETH/USD",
+        oracleB: "USDT/USD",
+        calculateRatio: (ethPrice, usdtPrice) => ethPrice / (usdtPrice || 1),
+    },
+    "BTC_ETH": {
+        name: "BTC/ETH",
+        token0Symbol: "BTC",
+        token1Symbol: "ETH",
+        oracleA: "BTC/USD",
+        oracleB: "ETH/USD",
+        calculateRatio: (btcPrice, ethPrice) => btcPrice / (ethPrice || 1),
+    },
+};
+
+// ============================================================================
+// MAIN WEB3 FUNCTION
+// ============================================================================
 Web3Function.onRun(async (context: Web3FunctionContext) => {
     const { userArgs } = context;
 
-    // BYPASS: The local SDK runner is struggling with env vars.
-    // We manually instantiate a StaticJsonRpcProvider for the simulation.
-    // This ensures 100% connectivity to Sepolia.
+    // Provider setup - use local Anvil fork for fast response
     const provider = new providers.StaticJsonRpcProvider("http://127.0.0.1:8545", 11155111);
 
     console.log("------------------------------------------");
-    console.log("🤖 Sentinel Gelato Agent: Starting Run");
+    console.log("🤖 Sentinel Multi-Pool Rebalancer");
     console.log("------------------------------------------");
 
     // 1. Parse Arguments
     const poolId = userArgs.poolId as string;
     const hookAddress = userArgs.hookAddress as string;
+    const poolType = (userArgs.poolType as string) || "ETH_USDC"; // Default to ETH/USDC
 
     console.log(`🔹 Inputs:`);
     console.log(`   - Pool ID: ${poolId}`);
+    console.log(`   - Pool Type: ${poolType}`);
     console.log(`   - Hook Address: ${hookAddress}`);
+
+    // Get pool configuration
+    const config = POOL_CONFIGS[poolType];
+    if (!config) {
+        console.error(`❌ Unknown pool type: ${poolType}`);
+        return { canExec: false, message: `Unknown pool type: ${poolType}` };
+    }
+    console.log(`   - Pool Name: ${config.name} (${config.token0Symbol}/${config.token1Symbol})`);
 
     if (!poolId || !hookAddress) {
         console.error("❌ Error: Missing poolId or hookAddress");
@@ -34,110 +93,98 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
     const hook = new Contract(hookAddress, SENTINEL_HOOK_ABI, provider);
 
     // 3. Fetch Pool State
-    let poolState;
-
-    // SIMULATION MODE: If the user hasn't deployed, we mock the Hook resonse
-    // but we return REAL addresses for Oracle/Tokens so the rest of the script 
-    // hits the actual testnet to prove data fetching works.
+    let poolState: any;
     if (poolId === "0xSIMULATE") {
-        console.log("⚠️ SIMULATION MODE DETECTED: Using Mock Pool State with REAL Sepolia Feeds");
+        console.log("⚠️ SIMULATION MODE DETECTED");
         poolState = {
-            activeTickLower: "73000",   // Corresponds to price ~1480 (Old mock price)
-            activeTickUpper: "76000",   // Corresponds to price ~2000
-            priceFeed: "0x694AA1769357215DE4FAC081bf1f309aDC325306", // REAL Sepolia ETH/USD Feed
-            priceFeedUSDC: "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E", // REAL Sepolia USDC/USD Feed
-            currency0: "0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c", // REAL Sepolia WETH
-            currency1: "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8", // REAL Sepolia USDC
+            activeTickLower: "-204000",   // Realistic for ETH/USDC
+            activeTickUpper: "-202000",
         };
         console.log("✅ Mocked Hook State Loaded");
     } else {
         try {
             poolState = await hook.getPoolState(poolId);
             console.log(`✅ Fetched Pool State from Hook`);
-        } catch (err) {
+        } catch (err: any) {
             console.error(`❌ Failed to get pool state: ${err.message}`);
             return { canExec: false, message: `Failed to get pool state: ${err.message}` };
         }
     }
 
-    const { activeTickLower, activeTickUpper, priceFeed, priceFeedUSDC, currency0, currency1 } = poolState;
+    const { activeTickLower, activeTickUpper } = poolState;
     console.log(`   - Active Range: [${activeTickLower}, ${activeTickUpper}]`);
-    console.log(`   - ETH/USD Feed: ${priceFeed}`);
-    console.log(`   - USDC/USD Feed: ${priceFeedUSDC || "Not Set (assuming $1.00)"}`);
-    console.log(`   - Currency0: ${currency0}`);
-    console.log(`   - Currency1: ${currency1}`);
 
-    // 4. Fetch DUAL Oracle Prices (ETH/USD and USDC/USD)
-    console.log("📡 Fetching Dual Oracle Data...");
+    // 4. Fetch Oracle Prices (Multi-Pool Aware)
+    console.log("📡 Fetching Oracle Data...");
 
-    // ETH/USD Price
-    const oracleETH = new Contract(priceFeed, ORACLE_ABI, provider);
-    let ethPrice: number = 0;
+    // Fetch Price A (always required)
+    const oracleAAddress = CHAINLINK_FEEDS[config.oracleA];
+    const oracleA = new Contract(oracleAAddress, ORACLE_ABI, provider);
+    let priceA: number = 0;
     let oracleDecimals: number = 8;
+
     try {
-        const [, answerETH] = await oracleETH.latestRoundData();
-        oracleDecimals = await oracleETH.decimals();
-        ethPrice = parseFloat(answerETH.toString()) / (10 ** oracleDecimals);
-        console.log(`   ✅ ETH/USD: $${ethPrice.toFixed(2)}`);
-    } catch (err) {
-        console.error(`❌ ETH Oracle read failed: ${err.message}`);
-        return { canExec: false, message: `ETH Oracle read failed: ${err.message}` };
+        const [, answerA] = await oracleA.latestRoundData();
+        oracleDecimals = await oracleA.decimals();
+        priceA = parseFloat(answerA.toString()) / (10 ** oracleDecimals);
+        console.log(`   ✅ ${config.oracleA}: $${priceA.toFixed(2)}`);
+    } catch (err: any) {
+        console.error(`❌ ${config.oracleA} Oracle failed: ${err.message}`);
+        return { canExec: false, message: `${config.oracleA} Oracle failed` };
     }
 
-    // USDC/USD Price (for depeg protection)
-    let usdcPrice: number = 1.0; // Default to $1.00 if no feed
-    if (priceFeedUSDC) {
-        try {
-            const oracleUSDC = new Contract(priceFeedUSDC, ORACLE_ABI, provider);
-            const [, answerUSDC] = await oracleUSDC.latestRoundData();
-            const usdcDecimals = await oracleUSDC.decimals();
-            usdcPrice = parseFloat(answerUSDC.toString()) / (10 ** usdcDecimals);
-            console.log(`   ✅ USDC/USD: $${usdcPrice.toFixed(4)}`);
+    // Fetch Price B (if needed)
+    let priceB: number | null = null;
+    if (config.oracleB) {
+        const oracleBAddress = CHAINLINK_FEEDS[config.oracleB];
+        const oracleB = new Contract(oracleBAddress, ORACLE_ABI, provider);
 
-            // Depeg warning
-            if (usdcPrice < 0.99 || usdcPrice > 1.01) {
-                console.warn(`   ⚠️ USDC DEPEG DETECTED! Price: $${usdcPrice.toFixed(4)}`);
+        try {
+            const [, answerB] = await oracleB.latestRoundData();
+            const decB = await oracleB.decimals();
+            priceB = parseFloat(answerB.toString()) / (10 ** decB);
+            console.log(`   ✅ ${config.oracleB}: $${priceB.toFixed(4)}`);
+
+            // Depeg warning for stablecoins
+            if (config.oracleB.includes("USDC") || config.oracleB.includes("USDT")) {
+                if (priceB < 0.99 || priceB > 1.01) {
+                    console.warn(`   ⚠️ STABLECOIN DEPEG DETECTED! Price: $${priceB.toFixed(4)}`);
+                }
             }
-        } catch (err) {
-            console.warn(`   ⚠️ USDC Oracle failed, assuming $1.00`);
+        } catch (err: any) {
+            console.warn(`   ⚠️ ${config.oracleB} Oracle failed, using fallback`);
+            priceB = config.oracleB.includes("USD") ? 1.0 : priceA; // Fallback logic
         }
-    } else {
-        console.log(`   ℹ️ No USDC feed configured, assuming $1.00`);
     }
 
-    // Calculate TRUE ETH/USDC ratio
-    const oraclePrice = ethPrice / usdcPrice;
-    console.log(`   🎯 TRUE ETH/USDC Ratio: ${oraclePrice.toFixed(4)} (ETH: $${ethPrice.toFixed(2)} / USDC: $${usdcPrice.toFixed(4)})`);
+    // Calculate the TRUE pool ratio
+    const poolRatio = config.calculateRatio(priceA, priceB);
+    console.log(`   🎯 TRUE ${config.name} Ratio: ${poolRatio.toFixed(6)}`);
 
-    // 4.5 HISTORICAL PRICE CHECK (48h Volatility for Dynamic Range)
-    console.log("📊 Fetching Historical Prices (Last ~48h)...");
-    let volatilityPercent = 5; // Default to medium volatility
+    // 5. Fetch Historical Prices for Volatility (48h)
+    console.log("📊 Fetching 48h Historical Data...");
+    let volatilityPercent = 5; // Default
 
     try {
-        // Resolve Proxy -> Aggregator (Chainlink events come from implementation)
         const aggregatorABI = ["function aggregator() external view returns (address)"];
-        const proxyContract = new (await import("ethers")).Contract(priceFeed, aggregatorABI, provider);
+        const proxyContract = new Contract(oracleAAddress, aggregatorABI, provider);
 
-        let aggregatorAddress = priceFeed;
-        try {
-            aggregatorAddress = await proxyContract.aggregator();
-            console.log(`   ℹ️ Resolved Aggregator: ${aggregatorAddress}`);
-        } catch (e) {
-            console.warn("   ⚠️ Could not resolve aggregator, querying proxy directly");
-        }
+        let aggregatorAddress = oracleAAddress;
+        try { aggregatorAddress = await proxyContract.aggregator(); } catch { }
 
         const currentBlock = await provider.getBlockNumber();
-        const BLOCKS_48H = 14400; // ~48 hours on Ethereum (12s blocks)
+        const BLOCKS_48H = 14400;
 
+        const { utils } = await import("ethers");
         const logs = await provider.getLogs({
             address: aggregatorAddress,
-            topics: [(await import("ethers")).utils.id("AnswerUpdated(int256,uint256,uint256)")],
+            topics: [utils.id("AnswerUpdated(int256,uint256,uint256)")],
             fromBlock: currentBlock - BLOCKS_48H,
             toBlock: "latest"
         });
 
         if (logs.length > 0) {
-            console.log(`   ✅ Found ${logs.length} price updates in last 48h`);
+            console.log(`   ✅ Found ${logs.length} price updates`);
             const prices = logs.map(log => {
                 const priceBig = parseInt(log.topics[1], 16);
                 return priceBig / (10 ** oracleDecimals);
@@ -150,118 +197,102 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
             console.log(`   📉 48h Low: $${minP.toFixed(2)}`);
             console.log(`   ⚡ Volatility: ${volatilityPercent.toFixed(2)}%`);
         } else {
-            console.log("   ℹ️ No price updates in last 48h (using default volatility: 5%)");
+            console.log("   ℹ️ No price updates found (using default volatility)");
         }
-    } catch (err) {
-        console.warn("   ⚠️ Could not fetch historical data (using default volatility: 5%)");
+    } catch (err: any) {
+        console.warn("   ⚠️ Could not fetch historical data");
     }
 
-    // 5. Fetch Token Decimals for Normalization
+    // 6. Fetch Token Decimals
     const ERC20_ABI = ["function decimals() external view returns (uint8)"];
-    const token0 = new Contract(currency0, ERC20_ABI, provider);
-    const token1 = new Contract(currency1, ERC20_ABI, provider);
-    let decimals0 = 18;
-    let decimals1 = 18;
-    try {
-        decimals0 = await token0.decimals();
-        decimals1 = await token1.decimals();
-        console.log(`✅ Fetched Token Decimals: ${decimals0} / ${decimals1}`);
-    } catch (err) {
-        console.warn("⚠️ Failed to fetch decimals, assuming 18");
+    let decimals0 = 18, decimals1 = 18;
+
+    // Default decimals based on pool type
+    if (poolType === "ETH_USDC" || poolType === "ETH_USDT") {
+        decimals0 = 18; // ETH
+        decimals1 = 6;  // USDC/USDT
+    } else if (poolType === "BTC_ETH") {
+        decimals0 = 8;  // BTC (WBTC)
+        decimals1 = 18; // ETH
     }
+    console.log(`   ✅ Token Decimals: ${decimals0} / ${decimals1}`);
 
-    // 6. Calculate Pool Price Ratio
+    // 7. Calculate Tick from Ratio
     const shift = decimals1 - decimals0;
-    const adjustedPrice = oraclePrice * (10 ** shift);
-    console.log(`🔹 Math:`);
-    console.log(`   - Shift (Dec1 - Dec0): ${shift}`);
-    console.log(`   - Adjusted Price Ratio: ${adjustedPrice}`);
-
-    // 7. Calculate Ideal Tick (The "Center")
+    const adjustedPrice = poolRatio * (10 ** shift);
     const currentTick = Math.floor(Math.log(adjustedPrice) / Math.log(1.0001));
+
+    console.log(`🔹 Math:`);
+    console.log(`   - Decimal Shift: ${shift}`);
+    console.log(`   - Adjusted Ratio: ${adjustedPrice.toExponential(4)}`);
     console.log(`   - Ideal Center Tick: ${currentTick}`);
 
-    // 8. Apply "Lung" Strategy (DYNAMIC Range Based on Volatility)
-    //    🫁 The Lung breathes: expands in volatile markets, contracts in stable ones
+    // 8. Apply Dynamic "Lung" Strategy
     let widthTicks: number;
     let lungState: string;
 
     if (volatilityPercent < 5) {
-        // LOW VOLATILITY: Tight range = more capital efficiency, more fees
-        widthTicks = 100;  // ~1% range
+        widthTicks = 100;
         lungState = "CONTRACTED 🔵 (Low Vol < 5%)";
     } else if (volatilityPercent < 15) {
-        // MEDIUM VOLATILITY: Balanced range
-        widthTicks = 300;  // ~3% range  
+        widthTicks = 300;
         lungState = "NORMAL 🟢 (Medium Vol 5-15%)";
     } else if (volatilityPercent < 30) {
-        // HIGH VOLATILITY: Wide range to avoid constant rebalancing
-        widthTicks = 600;  // ~6% range
+        widthTicks = 600;
         lungState = "EXPANDED 🟡 (High Vol 15-30%)";
     } else {
-        // EXTREME VOLATILITY: Very wide range for maximum protection
-        widthTicks = 1000; // ~10% range
+        widthTicks = 1000;
         lungState = "MAXIMUM 🔴 (Extreme Vol > 30%)";
     }
 
-    const newLowerRaw = currentTick - widthTicks;
-    const newUpperRaw = currentTick + widthTicks;
-
-    // Align to Tick Spacing (60)
     const TICK_SPACING = 60;
-    const newLower = Math.floor(newLowerRaw / TICK_SPACING) * TICK_SPACING;
-    const newUpper = Math.ceil(newUpperRaw / TICK_SPACING) * TICK_SPACING;
+    const newLower = Math.floor((currentTick - widthTicks) / TICK_SPACING) * TICK_SPACING;
+    const newUpper = Math.ceil((currentTick + widthTicks) / TICK_SPACING) * TICK_SPACING;
 
-    const widthBps = Math.round(widthTicks / 100) * 100; // Convert to bps for logging
+    console.log(`🫁 LUNG STRATEGY:`);
+    console.log(`   - Volatility: ${volatilityPercent.toFixed(2)}%`);
+    console.log(`   - State: ${lungState}`);
+    console.log(`   - Width: ${widthTicks} ticks`);
+    console.log(`   - New Range: [${newLower}, ${newUpper}]`);
 
-    console.log(`🫁 LUNG STRATEGY (Dynamic Width):`);
-    console.log(`   - 48h Volatility: ${volatilityPercent.toFixed(2)}%`);
-    console.log(`   - Lung State: ${lungState}`);
-    console.log(`   - Width: ${widthTicks} ticks (~${(widthTicks * 0.01).toFixed(1)}%)`);
-    console.log(`   - Proposed New Range: [${newLower}, ${newUpper}]`);
-
-    // 9. Logic Gate: Should we rebalance?
+    // 9. Safety Check
     const currentLower = parseInt(activeTickLower);
     const currentUpper = parseInt(activeTickUpper);
-
     const rangeWidth = currentUpper - currentLower;
     const safetyBuffer = rangeWidth * 0.1;
+    const isSafe = (currentTick > currentLower + safetyBuffer) && (currentTick < currentUpper - safetyBuffer);
 
-    const isSafe = (currentTick > (currentLower + safetyBuffer)) && (currentTick < (currentUpper - safetyBuffer));
-
-    console.log(`🔹 Safety Check (Drift Analysis):`);
+    console.log(`🔹 Safety Check:`);
     console.log(`   - Current Range: [${currentLower}, ${currentUpper}]`);
-    console.log(`   - Safe Zone Buffer: +/- ${safetyBuffer} ticks`);
-    console.log(`   - Is Tick ${currentTick} Safe? ${isSafe ? "YES" : "NO"}`);
+    console.log(`   - Is Tick ${currentTick} Safe? ${isSafe ? "YES ✅" : "NO ❌"}`);
 
     if (isSafe) {
-        const msg = `✅ Price safe. No rebalance.`;
-        console.log(msg);
-        return { canExec: false, message: msg };
+        console.log(`✅ Price safe. No rebalance needed.`);
+        return { canExec: false, message: "Price within safe range" };
     }
 
-    // 10. Execute Rebalance
+    // 10. Trigger Rebalance
     console.log(`🚀 TRIGGERING REBALANCE!`);
 
-    // In simulation mode, we return false but with success message (no valid callData)
     if (poolId === "0xSIMULATE") {
         console.log(`✅ SIMULATION SUCCESS!`);
-        console.log(`   Would rebalance to: [${newLower}, ${newUpper}]`);
-        console.log(`   Based on price: $${oraclePrice}`);
+        console.log(`   Pool: ${config.name}`);
+        console.log(`   Ratio: ${poolRatio.toFixed(4)}`);
+        console.log(`   New Range: [${newLower}, ${newUpper}]`);
         return {
             canExec: false,
-            message: `✅ SIMULATION COMPLETE! Logic verified. Would rebalance to [${newLower}, ${newUpper}]`
+            message: `✅ SIMULATION COMPLETE! ${config.name} would rebalance to [${newLower}, ${newUpper}]`
         };
     }
 
     return {
         canExec: true,
-        callData: hook.interface.encodeFunctionData("maintain", [
-            poolId,
-            newLower,
-            newUpper,
-            BigInt(widthBps) // Volatility param
-        ]),
-        message: `Rebalancing triggered! Price: ${oraclePrice}, New Range: [${newLower}, ${newUpper}]`
+        callData: [{
+            to: hookAddress,
+            data: hook.interface.encodeFunctionData("maintain", [
+                poolId, newLower, newUpper, BigInt(widthTicks)
+            ])
+        }],
+        message: `Rebalancing ${config.name}! New Range: [${newLower}, ${newUpper}]`
     };
 });
