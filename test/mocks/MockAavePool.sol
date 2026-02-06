@@ -129,4 +129,10 @@ contract MockAavePool {
     function setNormalizedIncome(uint256 value) external {
         normalizedIncome = value;
     }
+
+    function mintInterest(address asset, address to, uint256 amount) external {
+        address aTokenAddr = assetToAToken[asset];
+        require(aTokenAddr != address(0), "Reserve not initialized");
+        MockAToken(aTokenAddr).mint(to, amount);
+    }
 }

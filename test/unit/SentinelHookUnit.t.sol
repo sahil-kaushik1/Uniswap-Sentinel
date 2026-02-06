@@ -166,6 +166,39 @@ contract SentinelHookUnitTest is Test {
         assertTrue(aavePool.withdrawCalled());
     }
 
+    function testAaveInterest_DistributedByATokenShares() public {
+        MockERC20 token2 = new MockERC20("Token2", "TK2", 18);
+        PoolKey memory otherKey = PoolKey({
+            currency0: Currency.wrap(address(token0)),
+            currency1: Currency.wrap(address(token2)),
+            fee: 500,
+            tickSpacing: 10,
+            hooks: IHooks(address(hook))
+        });
+        PoolId otherPoolId = otherKey.toId();
+
+        poolManager.setSlot0(otherPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 500);
+        hook.initializePool(otherKey, address(oracle), false, aToken0, address(0), 500, -120, 120);
+
+        // Pool A deposits 10 token0 to Aave
+        token0.mint(address(hook), 10e18);
+        hook.setIdleBalances(poolId, 10e18, 0);
+        hook.exposedDistributeIdleToAave(poolId, Currency.wrap(address(token0)), aToken0, 10e18);
+
+        // Pool B deposits 30 token0 to Aave
+        token0.mint(address(hook), 30e18);
+        hook.setIdleBalances(otherPoolId, 30e18, 0);
+        hook.exposedDistributeIdleToAave(otherPoolId, Currency.wrap(address(token0)), aToken0, 30e18);
+
+        // Simulate 20 token0 interest accrued
+        aavePool.mintInterest(address(token0), address(hook), 20e18);
+
+        // Pool A should be able to withdraw 15 (10/40 * 60)
+        hook.exposedEnsureSufficientIdle(poolId, 15e18, 0);
+        SentinelHook.PoolState memory state = hook.getPoolState(poolId);
+        assertEq(state.idle0, 15e18);
+    }
+
     function testBeforeSwap_EmitsTickCrossed() public {
         poolManager.setSlot0(poolId, TickMath.getSqrtPriceAtTick(0), 200, 0, 3000);
         oracle.setRoundData(1, 1e8, block.timestamp, block.timestamp, 1);

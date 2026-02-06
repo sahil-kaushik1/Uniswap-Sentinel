@@ -73,7 +73,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // Idle balances (per-pool accounting)
         uint256 idle0;
         uint256 idle1;
-        // Aave balances (per-pool accounting)
+        // Aave aToken shares (per-pool accounting)
         uint256 aave0;
         uint256 aave1;
         // Pool Tokens (cached for efficiency)
@@ -204,6 +204,9 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
     /// @notice List of all initialized pool IDs
     PoolId[] public allPools;
+
+    /// @notice Global aToken share totals (per aToken)
+    mapping(address => uint256) public aTokenTotalShares;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -573,8 +576,8 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         PoolId poolId
     ) internal view returns (uint256 totalIdle0, uint256 totalIdle1) {
         PoolState storage state = poolStates[poolId];
-        totalIdle0 = state.idle0 + state.aave0;
-        totalIdle1 = state.idle1 + state.aave1;
+        totalIdle0 = state.idle0 + _getPoolATokenClaim(state.aToken0, state.aave0);
+        totalIdle1 = state.idle1 + _getPoolATokenClaim(state.aToken1, state.aave1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -681,32 +684,56 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint256 withdrawn1 = 0;
 
         if (state.aToken0 != address(0) && state.aave0 > 0) {
-            uint256 amount0 = state.aave0;
-            withdrawn0 = AaveAdapter.withdrawFromAave(
-                aavePool,
-                Currency.unwrap(state.currency0),
-                amount0,
-                address(this)
-            );
-            if (withdrawn0 > 0) {
-                if (withdrawn0 > state.aave0) withdrawn0 = state.aave0;
-                state.aave0 -= withdrawn0;
-                state.idle0 += withdrawn0;
+            uint256 poolClaim0 = _getPoolATokenClaim(state.aToken0, state.aave0);
+            if (poolClaim0 > 0) {
+                uint256 balanceBefore0 = AaveAdapter.getAaveBalance(
+                    state.aToken0,
+                    address(this)
+                );
+                withdrawn0 = AaveAdapter.withdrawFromAave(
+                    aavePool,
+                    Currency.unwrap(state.currency0),
+                    poolClaim0,
+                    address(this)
+                );
+                uint256 burned0 = _burnATokenShares(
+                    state.aToken0,
+                    state.aave0,
+                    withdrawn0,
+                    balanceBefore0
+                );
+                if (burned0 > 0) {
+                    state.aave0 -= burned0;
+                    aTokenTotalShares[state.aToken0] -= burned0;
+                }
+                if (withdrawn0 > 0) state.idle0 += withdrawn0;
             }
         }
 
         if (state.aToken1 != address(0) && state.aave1 > 0) {
-            uint256 amount1 = state.aave1;
-            withdrawn1 = AaveAdapter.withdrawFromAave(
-                aavePool,
-                Currency.unwrap(state.currency1),
-                amount1,
-                address(this)
-            );
-            if (withdrawn1 > 0) {
-                if (withdrawn1 > state.aave1) withdrawn1 = state.aave1;
-                state.aave1 -= withdrawn1;
-                state.idle1 += withdrawn1;
+            uint256 poolClaim1 = _getPoolATokenClaim(state.aToken1, state.aave1);
+            if (poolClaim1 > 0) {
+                uint256 balanceBefore1 = AaveAdapter.getAaveBalance(
+                    state.aToken1,
+                    address(this)
+                );
+                withdrawn1 = AaveAdapter.withdrawFromAave(
+                    aavePool,
+                    Currency.unwrap(state.currency1),
+                    poolClaim1,
+                    address(this)
+                );
+                uint256 burned1 = _burnATokenShares(
+                    state.aToken1,
+                    state.aave1,
+                    withdrawn1,
+                    balanceBefore1
+                );
+                if (burned1 > 0) {
+                    state.aave1 -= burned1;
+                    aTokenTotalShares[state.aToken1] -= burned1;
+                }
+                if (withdrawn1 > 0) state.idle1 += withdrawn1;
             }
         }
 
@@ -824,15 +851,23 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         if (currency == state.currency0) {
             if (amount > state.idle0) amount = state.idle0;
             if (amount == 0) return;
+            uint256 beforeBal = AaveAdapter.getAaveBalance(aToken, address(this));
             AaveAdapter.depositToAave(aavePool, asset, amount, address(this));
+            uint256 afterBal = AaveAdapter.getAaveBalance(aToken, address(this));
+            uint256 minted = afterBal - beforeBal;
             state.idle0 -= amount;
-            state.aave0 += amount;
+            state.aave0 += minted;
+            aTokenTotalShares[aToken] += minted;
         } else if (currency == state.currency1) {
             if (amount > state.idle1) amount = state.idle1;
             if (amount == 0) return;
+            uint256 beforeBal = AaveAdapter.getAaveBalance(aToken, address(this));
             AaveAdapter.depositToAave(aavePool, asset, amount, address(this));
+            uint256 afterBal = AaveAdapter.getAaveBalance(aToken, address(this));
+            uint256 minted = afterBal - beforeBal;
             state.idle1 -= amount;
-            state.aave1 += amount;
+            state.aave1 += minted;
+            aTokenTotalShares[aToken] += minted;
         } else {
             revert InvalidYieldCurrency();
         }
@@ -854,8 +889,8 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
         totalLiquidityUnits = uint256(state.activeLiquidity);
 
-        uint256 idle0 = state.idle0 + state.aave0;
-        uint256 idle1 = state.idle1 + state.aave1;
+        uint256 idle0 = state.idle0 + _getPoolATokenClaim(state.aToken0, state.aave0);
+        uint256 idle1 = state.idle1 + _getPoolATokenClaim(state.aToken1, state.aave1);
 
         uint160 sqrtRatioAX96 = TickMath.getSqrtPriceAtTick(
             state.activeTickLower
@@ -988,42 +1023,60 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // Check Token0
         if (state.idle0 < required0 && state.aToken0 != address(0)) {
             uint256 missing0 = required0 - state.idle0;
-            uint256 withdraw0 = missing0 > state.aave0
-                ? state.aave0
-                : missing0;
+            uint256 poolClaim0 = _getPoolATokenClaim(state.aToken0, state.aave0);
+            uint256 withdraw0 = missing0 > poolClaim0 ? poolClaim0 : missing0;
             if (withdraw0 > 0) {
+                uint256 balanceBefore0 = AaveAdapter.getAaveBalance(
+                    state.aToken0,
+                    address(this)
+                );
                 uint256 withdrawn0 = AaveAdapter.withdrawFromAave(
                     aavePool,
                     Currency.unwrap(state.currency0),
                     withdraw0,
                     address(this)
                 );
-                if (withdrawn0 > 0) {
-                    if (withdrawn0 > state.aave0) withdrawn0 = state.aave0;
-                    state.aave0 -= withdrawn0;
-                    state.idle0 += withdrawn0;
+                uint256 burned0 = _burnATokenShares(
+                    state.aToken0,
+                    state.aave0,
+                    withdrawn0,
+                    balanceBefore0
+                );
+                if (burned0 > 0) {
+                    state.aave0 -= burned0;
+                    aTokenTotalShares[state.aToken0] -= burned0;
                 }
+                if (withdrawn0 > 0) state.idle0 += withdrawn0;
             }
         }
 
         // Check Token1
         if (state.idle1 < required1 && state.aToken1 != address(0)) {
             uint256 missing1 = required1 - state.idle1;
-            uint256 withdraw1 = missing1 > state.aave1
-                ? state.aave1
-                : missing1;
+            uint256 poolClaim1 = _getPoolATokenClaim(state.aToken1, state.aave1);
+            uint256 withdraw1 = missing1 > poolClaim1 ? poolClaim1 : missing1;
             if (withdraw1 > 0) {
+                uint256 balanceBefore1 = AaveAdapter.getAaveBalance(
+                    state.aToken1,
+                    address(this)
+                );
                 uint256 withdrawn1 = AaveAdapter.withdrawFromAave(
                     aavePool,
                     Currency.unwrap(state.currency1),
                     withdraw1,
                     address(this)
                 );
-                if (withdrawn1 > 0) {
-                    if (withdrawn1 > state.aave1) withdrawn1 = state.aave1;
-                    state.aave1 -= withdrawn1;
-                    state.idle1 += withdrawn1;
+                uint256 burned1 = _burnATokenShares(
+                    state.aToken1,
+                    state.aave1,
+                    withdrawn1,
+                    balanceBefore1
+                );
+                if (burned1 > 0) {
+                    state.aave1 -= burned1;
+                    aTokenTotalShares[state.aToken1] -= burned1;
                 }
+                if (withdrawn1 > 0) state.idle1 += withdrawn1;
             }
         }
     }
@@ -1057,6 +1110,33 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         for (uint8 i = 0; i < exp; i++) {
             result *= 10;
         }
+    }
+
+    function _getPoolATokenClaim(
+        address aToken,
+        uint256 poolShares
+    ) internal view returns (uint256 claim) {
+        if (aToken == address(0) || poolShares == 0) return 0;
+        uint256 totalShares = aTokenTotalShares[aToken];
+        if (totalShares == 0) return 0;
+        uint256 currentBalance = AaveAdapter.getAaveBalance(aToken, address(this));
+        if (currentBalance == 0) return 0;
+
+        claim = FullMath.mulDiv(currentBalance, poolShares, totalShares);
+    }
+
+    function _burnATokenShares(
+        address aToken,
+        uint256 poolShares,
+        uint256 withdrawn,
+        uint256 balanceBefore
+    ) internal view returns (uint256 sharesBurned) {
+        if (aToken == address(0) || withdrawn == 0 || poolShares == 0) return 0;
+        uint256 totalShares = aTokenTotalShares[aToken];
+        if (totalShares == 0 || balanceBefore == 0) return 0;
+
+        sharesBurned = FullMath.mulDiv(withdrawn, totalShares, balanceBefore);
+        if (sharesBurned > poolShares) sharesBurned = poolShares;
     }
 
     function _estimatePoolPrice(
@@ -1217,31 +1297,61 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         PoolState storage state = poolStates[poolId];
         uint256 totalWithdrawn = 0;
 
-        if (state.aToken0 != address(0)) {
-            uint256 withdrawn0 = AaveAdapter.emergencyWithdrawAll(
-                aavePool,
-                Currency.unwrap(state.currency0),
-                address(this)
-            );
-            if (withdrawn0 > 0) {
-                if (withdrawn0 > state.aave0) withdrawn0 = state.aave0;
-                state.aave0 -= withdrawn0;
-                state.idle0 += withdrawn0;
-                totalWithdrawn += withdrawn0;
+        if (state.aToken0 != address(0) && state.aave0 > 0) {
+            uint256 poolClaim0 = _getPoolATokenClaim(state.aToken0, state.aave0);
+            if (poolClaim0 > 0) {
+                uint256 balanceBefore0 = AaveAdapter.getAaveBalance(
+                    state.aToken0,
+                    address(this)
+                );
+                uint256 withdrawn0 = AaveAdapter.emergencyWithdrawAll(
+                    aavePool,
+                    Currency.unwrap(state.currency0),
+                    address(this)
+                );
+                uint256 burned0 = _burnATokenShares(
+                    state.aToken0,
+                    state.aave0,
+                    withdrawn0,
+                    balanceBefore0
+                );
+                if (burned0 > 0) {
+                    state.aave0 -= burned0;
+                    aTokenTotalShares[state.aToken0] -= burned0;
+                }
+                if (withdrawn0 > 0) {
+                    state.idle0 += withdrawn0;
+                    totalWithdrawn += withdrawn0;
+                }
             }
         }
 
-        if (state.aToken1 != address(0)) {
-            uint256 withdrawn1 = AaveAdapter.emergencyWithdrawAll(
-                aavePool,
-                Currency.unwrap(state.currency1),
-                address(this)
-            );
-            if (withdrawn1 > 0) {
-                if (withdrawn1 > state.aave1) withdrawn1 = state.aave1;
-                state.aave1 -= withdrawn1;
-                state.idle1 += withdrawn1;
-                totalWithdrawn += withdrawn1;
+        if (state.aToken1 != address(0) && state.aave1 > 0) {
+            uint256 poolClaim1 = _getPoolATokenClaim(state.aToken1, state.aave1);
+            if (poolClaim1 > 0) {
+                uint256 balanceBefore1 = AaveAdapter.getAaveBalance(
+                    state.aToken1,
+                    address(this)
+                );
+                uint256 withdrawn1 = AaveAdapter.emergencyWithdrawAll(
+                    aavePool,
+                    Currency.unwrap(state.currency1),
+                    address(this)
+                );
+                uint256 burned1 = _burnATokenShares(
+                    state.aToken1,
+                    state.aave1,
+                    withdrawn1,
+                    balanceBefore1
+                );
+                if (burned1 > 0) {
+                    state.aave1 -= burned1;
+                    aTokenTotalShares[state.aToken1] -= burned1;
+                }
+                if (withdrawn1 > 0) {
+                    state.idle1 += withdrawn1;
+                    totalWithdrawn += withdrawn1;
+                }
             }
         }
 

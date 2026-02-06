@@ -56,9 +56,20 @@ contract SentinelHookHarness is SentinelHook {
         poolStates[poolId].idle1 = idle1;
     }
 
-    function setAaveBalances(PoolId poolId, uint256 aave0, uint256 aave1) external {
-        poolStates[poolId].aave0 = aave0;
-        poolStates[poolId].aave1 = aave1;
+    function setATokenShares(PoolId poolId, uint256 shares0, uint256 shares1) external {
+        PoolState storage state = poolStates[poolId];
+
+        if (state.aToken0 != address(0)) {
+            uint256 old0 = state.aave0;
+            state.aave0 = shares0;
+            aTokenTotalShares[state.aToken0] = aTokenTotalShares[state.aToken0] - old0 + shares0;
+        }
+
+        if (state.aToken1 != address(0)) {
+            uint256 old1 = state.aave1;
+            state.aave1 = shares1;
+            aTokenTotalShares[state.aToken1] = aTokenTotalShares[state.aToken1] - old1 + shares1;
+        }
     }
 
     function setTicks(PoolId poolId, int24 lower, int24 upper) external {

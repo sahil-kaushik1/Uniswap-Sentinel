@@ -56,7 +56,7 @@ const POOL_CONFIGS: Record<string, PoolConfig> = {
 // ============================================================================
 // MAIN WEB3 FUNCTION
 // ============================================================================
-Web3Function.onRun(async (context: Web3FunctionContext) => {
+export const handler = async (context: Web3FunctionContext) => {
     const { userArgs } = context;
 
     // Provider setup - use Gelato-provided provider
@@ -305,4 +305,6 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
         }],
         message: `Rebalancing ${config.name}! New Range: [${newLower}, ${newUpper}]`
     };
-});
+};
+
+Web3Function.onRun(handler);
