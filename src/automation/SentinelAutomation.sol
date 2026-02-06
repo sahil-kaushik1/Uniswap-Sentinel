@@ -37,23 +37,37 @@ interface ISentinelHook {
         uint256 volatility
     ) external;
 
+    /// @notice Returns pool state - matches PoolState struct order
+    /// @dev Struct fields: activeTickLower, activeTickUpper, activeLiquidity,
+    ///      priceFeed, priceFeedInverted, maxDeviationBps, aToken0, aToken1,
+    ///      idle0, idle1, aave0, aave1, currency0, currency1, decimals0, decimals1,
+    ///      fee, tickSpacing, totalShares, isInitialized
     function poolStates(
         PoolId poolId
     )
         external
         view
         returns (
-            int24,
-            int24,
-            uint128,
-            address,
-            uint256,
-            address,
-            address,
-            address,
-            address,
-            uint256,
-            bool
+            int24 activeTickLower,
+            int24 activeTickUpper,
+            uint128 activeLiquidity,
+            address priceFeed,
+            bool priceFeedInverted,
+            uint256 maxDeviationBps,
+            address aToken0,
+            address aToken1,
+            uint256 idle0,
+            uint256 idle1,
+            uint256 aave0,
+            uint256 aave1,
+            address currency0, // Currency = address
+            address currency1,
+            uint8 decimals0,
+            uint8 decimals1,
+            uint24 fee,
+            int24 tickSpacing,
+            uint256 totalShares,
+            bool isInitialized
         );
 }
 
@@ -165,10 +179,9 @@ contract SentinelAutomation is IFunctionsClient {
 
             if (!pools[idx].active) continue;
 
-            // Check if pool is initialized
-            (, , , , , , , , , , bool isInit) = hook.poolStates(
-                pools[idx].poolId
-            );
+            // Check if pool is initialized (20th return value)
+            (, , , , , , , , , , , , , , , , , , , bool isInit) = hook
+                .poolStates(pools[idx].poolId);
             if (!isInit) continue;
 
             // This pool needs checking
