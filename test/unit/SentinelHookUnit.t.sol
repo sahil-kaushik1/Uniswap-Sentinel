@@ -15,6 +15,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {OracleLib} from "../../src/libraries/OracleLib.sol";
 import {YieldRouter} from "../../src/libraries/YieldRouter.sol";
 import {AaveAdapter} from "../../src/libraries/AaveAdapter.sol";
@@ -90,11 +91,11 @@ contract SentinelHookUnitTest is Test {
     }
 
     function testDepositLiquidity_RegistersLpAndMintsShares() public {
-        token0.mint(lp, 10e18);
+        token0.mint(lp, 12e18);
         token1.mint(lp, 10e18);
 
         vm.startPrank(lp);
-        token0.approve(address(hook), 10e18);
+        token0.approve(address(hook), 12e18);
         token1.approve(address(hook), 10e18);
         uint256 shares = hook.depositLiquidity(key, 5e18, 5e18);
         vm.stopPrank();
@@ -123,11 +124,11 @@ contract SentinelHookUnitTest is Test {
     }
 
     function testWithdrawLiquidity_ReturnsIdleProRata() public {
-        token0.mint(lp, 10e18);
+        token0.mint(lp, 12e18);
         token1.mint(lp, 10e18);
 
         vm.startPrank(lp);
-        token0.approve(address(hook), 10e18);
+        token0.approve(address(hook), 12e18);
         token1.approve(address(hook), 10e18);
         uint256 shares = hook.depositLiquidity(key, 10e18, 10e18);
         vm.stopPrank();
@@ -186,6 +187,7 @@ contract SentinelHookUnitTest is Test {
     }
 
     function testBeforeSwap_RevertsOnStaleOracle() public {
+        vm.warp(10_000);
         uint256 stale = block.timestamp - (OracleLib.MAX_ORACLE_STALENESS + 1);
         oracle.setRoundData(1, 1e8, stale, stale, 1);
 
@@ -213,18 +215,18 @@ contract SentinelHookUnitTest is Test {
         PoolKey memory invKey = PoolKey({
             currency0: Currency.wrap(address(token0)),
             currency1: Currency.wrap(address(token1)),
-            fee: 3000,
+            fee: 500,
             tickSpacing: 60,
             hooks: IHooks(address(hook))
         });
         PoolId invPoolId = invKey.toId();
 
         // pool price = 0.5 (token1 per token0)
-        poolManager.setSlot0(invPoolId, TickMath.getSqrtPriceAtTick(-6931), -6931, 0, 3000);
+        uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(-6931);
+        poolManager.setSlot0(invPoolId, sqrtPriceX96, -6931, 0, 3000);
         hook.initializePool(invKey, address(oracle), true, address(0), address(0), 500, -120, 120);
 
-        // oracle returns 2.0 (token0 per token1); inverted => 0.5
-        oracle.setRoundData(1, 2e8, block.timestamp, block.timestamp, 1);
+        _setOracleToPoolPrice(sqrtPriceX96, 18, 18, true);
 
         SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
         poolManager.callBeforeSwap(invKey, params);
@@ -241,11 +243,11 @@ contract SentinelHookUnitTest is Test {
         });
         PoolId decPoolId = decKey.toId();
 
-        poolManager.setSlot0(decPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 3000);
+        uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(-276324);
+        poolManager.setSlot0(decPoolId, sqrtPriceX96, -276324, 0, 3000);
         hook.initializePool(decKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
-        // Oracle price = 1.0 (1e8) should match pool price after decimals scaling
-        oracle.setRoundData(1, 1e8, block.timestamp, block.timestamp, 1);
+        _setOracleToPoolPrice(sqrtPriceX96, 18, 6, false);
 
         SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
         poolManager.callBeforeSwap(decKey, params);
@@ -320,15 +322,20 @@ contract SentinelHookUnitTest is Test {
         // set price to ~100 token1 per token0
         poolManager.setSlot0(poolId, TickMath.getSqrtPriceAtTick(46054), 46054, 0, 3000);
 
-        hook.setIdleBalances(poolId, 20e18, 0);
+        hook.setIdleBalances(poolId, 20e18, 2000e18);
+
+        token0.mint(address(hook), 14e18);
+        token1.mint(address(hook), 1400e18);
 
         // simulate liquidity spend from token0
         poolManager.setCurrencyDelta(address(hook), Currency.wrap(address(token0)), -int256(14e18));
+        poolManager.setCurrencyDelta(address(hook), Currency.wrap(address(token1)), -int256(1400e18));
 
         hook.exposedHandleMaintain(poolId, 45900, 46200, 0);
 
         SentinelHook.PoolState memory state = hook.getPoolState(poolId);
         assertEq(state.idle0, 6e18);
+        assertEq(state.idle1, 600e18);
     }
 
     function testSettleOrTake_NativeCurrency() public {
@@ -387,11 +394,11 @@ contract SentinelHookUnitTest is Test {
     }
 
     function testGetSharePriceAndPosition() public {
-        token0.mint(lp, 10e18);
+        token0.mint(lp, 12e18);
         token1.mint(lp, 10e18);
 
         vm.startPrank(lp);
-        token0.approve(address(hook), 10e18);
+        token0.approve(address(hook), 12e18);
         token1.approve(address(hook), 10e18);
         uint256 shares = hook.depositLiquidity(key, 10e18, 10e18);
         vm.stopPrank();
@@ -417,10 +424,11 @@ contract SentinelHookUnitTest is Test {
         uint256 priceBefore = hook.getSharePrice(poolId);
 
         token0.mint(address(hook), 5e18);
+        token1.mint(address(hook), 5e18);
         uint256 priceUnchanged = hook.getSharePrice(poolId);
         assertEq(priceUnchanged, priceBefore);
 
-        hook.creditIdle(poolId, 5e18, 0);
+        hook.creditIdle(poolId, 5e18, 5e18);
 
         uint256 priceAfter = hook.getSharePrice(poolId);
         assertTrue(priceAfter > priceBefore);
@@ -468,6 +476,7 @@ contract SentinelHookUnitTest is Test {
         hook.initializePool(nativeKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         token1.mint(lp, 2e18);
+        vm.deal(lp, 1e18);
 
         vm.startPrank(lp);
         token1.approve(address(hook), 2e18);
@@ -527,14 +536,14 @@ contract SentinelHookUnitTest is Test {
         poolManager.setSlot0(otherPoolId, TickMath.getSqrtPriceAtTick(0), 0, 0, 500);
         hook.initializePool(otherKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
-        token0.mint(lp, 10e18);
+        token0.mint(lp, 20e18);
         token1.mint(lp, 10e18);
         token2.mint(lp, 2e18);
 
         vm.startPrank(lp);
-        token0.approve(address(hook), 10e18);
-        token1.approve(address(hook), 10e18);
-        token2.approve(address(hook), 2e18);
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
+        token2.approve(address(hook), type(uint256).max);
         hook.depositLiquidity(key, 10e18, 10e18);
         uint256 otherShares = hook.depositLiquidity(otherKey, 2e18, 2e18);
         vm.stopPrank();
@@ -565,6 +574,8 @@ contract SentinelHookUnitTest is Test {
         hook.setTotalShares(otherPoolId, 100);
         hook.setLPShares(otherPoolId, lp, 100);
 
+        poolManager.setModifyLiquidityDelta(0, 0);
+
         vm.prank(lp);
         hook.withdrawLiquidity(otherKey, 100);
 
@@ -588,7 +599,9 @@ contract SentinelHookUnitTest is Test {
         hook.initializePool(otherKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         hook.setIdleBalances(otherPoolId, 7e18, 0);
-        hook.setIdleBalances(poolId, 10e18, 10e18);
+        hook.setIdleBalances(poolId, 1000e18, 1000e18);
+
+        aavePool.setRevertIncome(true);
 
         hook.exposedHandleMaintain(poolId, -120, 120, 500);
 
@@ -612,11 +625,43 @@ contract SentinelHookUnitTest is Test {
         hook.initializePool(otherKey, address(oracle), false, address(0), address(0), 500, -120, 120);
 
         hook.setActiveLiquidity(otherPoolId, 1000);
+        hook.setIdleBalances(otherPoolId, 1000e18, 0);
         hook.setTicks(otherPoolId, -120, 120);
 
         hook.exposedHandleMaintain(otherPoolId, -100, 100, 500);
 
         assertEq(poolManager.lastFee(), 500);
         assertEq(poolManager.lastTickSpacing(), 10);
+    }
+
+    function _setOracleToPoolPrice(
+        uint160 sqrtPriceX96,
+        uint8 decimals0,
+        uint8 decimals1,
+        bool inverted
+    ) internal {
+        uint256 priceX18 = FullMath.mulDiv(
+            uint256(sqrtPriceX96),
+            uint256(sqrtPriceX96) * 1e18,
+            uint256(1) << 192
+        );
+
+        uint256 scaleUp = _pow10(decimals0);
+        uint256 scaleDown = _pow10(decimals1);
+        uint256 poolPrice = FullMath.mulDiv(priceX18, scaleUp, scaleDown);
+
+        if (inverted) {
+            poolPrice = FullMath.mulDiv(1e36, 1, poolPrice);
+        }
+
+        uint256 oracleAnswer = poolPrice / 1e10;
+        oracle.setRoundData(1, int256(oracleAnswer), block.timestamp, block.timestamp, 1);
+    }
+
+    function _pow10(uint8 exp) internal pure returns (uint256 result) {
+        result = 1;
+        for (uint8 i = 0; i < exp; i++) {
+            result *= 10;
+        }
     }
 }

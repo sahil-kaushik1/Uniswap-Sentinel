@@ -1068,18 +1068,18 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
             poolId
         );
 
-        uint256 price = FullMath.mulDiv(
+        uint256 priceX18 = FullMath.mulDiv(
             uint256(sqrtPriceX96),
-            uint256(sqrtPriceX96),
+            uint256(sqrtPriceX96) * 1e18,
             uint256(1) << 192
         );
 
         PoolState storage state = poolStates[poolId];
 
-        uint256 scaleUp = _pow10(state.decimals0) * 1e18;
+        uint256 scaleUp = _pow10(state.decimals0);
         uint256 scaleDown = _pow10(state.decimals1);
 
-        return FullMath.mulDiv(price, scaleUp, scaleDown);
+        return FullMath.mulDiv(priceX18, scaleUp, scaleDown);
     }
 
     function _checkTickCrossing(
