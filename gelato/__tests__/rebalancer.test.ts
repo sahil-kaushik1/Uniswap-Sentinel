@@ -54,7 +54,10 @@ describe("Gelato rebalancer W3F", () => {
     } as any);
 
     expect(result.canExec).toBe(true);
-    expect(result.callData?.[0]?.to).toBe("0xhook");
-    expect(result.callData?.[0]?.data).toBe("0xdeadbeef");
+    if (result.canExec) {
+      const callData = result.callData as Array<{ to: string; data: string }>;
+      expect(callData?.[0]?.to).toBe("0xhook");
+      expect(callData?.[0]?.data).toBe("0xdeadbeef");
+    }
   });
 });

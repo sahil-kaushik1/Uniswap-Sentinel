@@ -401,12 +401,12 @@ contract SentinelIntegrationTest is Test {
             vm.skip(true, "Pool initialization failed on fork");
             return;
         }
-        deal(WETH, lp1, 10e18); // 10 WETH
-        deal(USDC, lp1, 30000e6); // 30,000 USDC
+        deal(WETH, lp1, 2000e18); // 2,000 WETH
+        deal(USDC, lp1, 6_000_000e6); // 6,000,000 USDC
         vm.startPrank(lp1);
-        IERC20(WETH).approve(address(hook), 10e18);
-        IERC20(USDC).approve(address(hook), 30000e6);
-        (uint256 amount0, uint256 amount1) = _amountsForKey(ethUsdcKey, 10e18, 30000e6);
+        IERC20(WETH).approve(address(hook), 2000e18);
+        IERC20(USDC).approve(address(hook), 6_000_000e6);
+        (uint256 amount0, uint256 amount1) = _amountsForKey(ethUsdcKey, 2000e18, 6_000_000e6);
         hook.depositLiquidity(ethUsdcKey, amount0, amount1);
         vm.stopPrank();
 

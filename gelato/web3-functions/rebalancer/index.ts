@@ -1,6 +1,7 @@
 import {
     Web3Function,
     Web3FunctionContext,
+    Web3FunctionResult,
 } from "@gelatonetwork/web3-functions-sdk";
 import { Contract, providers } from "ethers";
 import { SENTINEL_HOOK_ABI, ORACLE_ABI } from "./abi";
@@ -56,11 +57,11 @@ const POOL_CONFIGS: Record<string, PoolConfig> = {
 // ============================================================================
 // MAIN WEB3 FUNCTION
 // ============================================================================
-export const handler = async (context: Web3FunctionContext) => {
+export const handler = async (context: Web3FunctionContext): Promise<Web3FunctionResult> => {
     const { userArgs } = context;
 
     // Provider setup - use Gelato-provided provider
-    const provider = context.provider as providers.Provider;
+    const provider = (context as any).provider as providers.Provider;
 
     console.log("------------------------------------------");
     console.log("🤖 Sentinel Multi-Pool Rebalancer");
@@ -80,13 +81,13 @@ export const handler = async (context: Web3FunctionContext) => {
     const config = POOL_CONFIGS[poolType];
     if (!config) {
         console.error(`❌ Unknown pool type: ${poolType}`);
-        return { canExec: false, message: `Unknown pool type: ${poolType}` };
+        return { canExec: false as const, message: `Unknown pool type: ${poolType}` };
     }
     console.log(`   - Pool Name: ${config.name} (${config.token0Symbol}/${config.token1Symbol})`);
 
     if (!poolId || !hookAddress) {
         console.error("❌ Error: Missing poolId or hookAddress");
-        return { canExec: false, message: "Missing poolId or hookAddress" };
+        return { canExec: false as const, message: "Missing poolId or hookAddress" };
     }
 
     // 2. Instantiate Hook Contract
@@ -107,7 +108,7 @@ export const handler = async (context: Web3FunctionContext) => {
             console.log(`✅ Fetched Pool State from Hook`);
         } catch (err: any) {
             console.error(`❌ Failed to get pool state: ${err.message}`);
-            return { canExec: false, message: `Failed to get pool state: ${err.message}` };
+            return { canExec: false as const, message: `Failed to get pool state: ${err.message}` };
         }
     }
 
@@ -140,7 +141,7 @@ export const handler = async (context: Web3FunctionContext) => {
         console.log(`   ✅ ${config.oracleA}: $${priceA.toFixed(2)}`);
     } catch (err: any) {
         console.error(`❌ ${config.oracleA} Oracle failed: ${err.message}`);
-        return { canExec: false, message: `${config.oracleA} Oracle failed` };
+        return { canExec: false as const, message: `${config.oracleA} Oracle failed` };
     }
 
     // Fetch Price B (if needed)
@@ -278,7 +279,7 @@ export const handler = async (context: Web3FunctionContext) => {
 
     if (isSafe) {
         console.log(`✅ Price safe. No rebalance needed.`);
-        return { canExec: false, message: "Price within safe range" };
+        return { canExec: false as const, message: "Price within safe range" };
     }
 
     // 10. Trigger Rebalance
@@ -290,13 +291,13 @@ export const handler = async (context: Web3FunctionContext) => {
         console.log(`   Ratio: ${poolRatio.toFixed(4)}`);
         console.log(`   New Range: [${newLower}, ${newUpper}]`);
         return {
-            canExec: false,
+            canExec: false as const,
             message: `✅ SIMULATION COMPLETE! ${config.name} would rebalance to [${newLower}, ${newUpper}]`
         };
     }
 
     return {
-        canExec: true,
+        canExec: true as const,
         callData: [{
             to: hookAddress,
             data: hook.interface.encodeFunctionData("maintain", [
@@ -307,4 +308,6 @@ export const handler = async (context: Web3FunctionContext) => {
     };
 };
 
-Web3Function.onRun(handler);
+if (typeof (globalThis as any).addEventListener === "function") {
+    Web3Function.onRun(handler);
+}

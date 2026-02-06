@@ -750,9 +750,12 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
         uint256 poolPrice = _estimatePoolPrice(poolId, state.priceFeed);
 
-        uint256 idle0Value = FullMath.mulDiv(state.idle0, poolPrice, 1e18);
-        uint256 idle1Value = state.idle1;
-        uint256 totalValue = idle0Value + idle1Value;
+        uint256 idle0Amount18 = _to18Decimals(state.idle0, state.decimals0);
+        uint256 idle1Amount18 = _to18Decimals(state.idle1, state.decimals1);
+
+        uint256 idle0Value18 = FullMath.mulDiv(idle0Amount18, poolPrice, 1e18);
+        uint256 idle1Value18 = idle1Amount18;
+        uint256 totalValue = idle0Value18 + idle1Value18;
 
         uint256 targetIdleValue = 0;
         if (totalValue > 0) {
@@ -774,12 +777,18 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint256 targetIdle0 = 0;
         uint256 targetIdle1 = 0;
         if (totalValue > 0 && targetIdleValue > 0) {
-            uint256 targetIdle0Value =
-                (targetIdleValue * idle0Value) / totalValue;
-            uint256 targetIdle1Value = targetIdleValue - targetIdle0Value;
+            uint256 targetIdle0Value18 =
+                (targetIdleValue * idle0Value18) / totalValue;
+            uint256 targetIdle1Value18 = targetIdleValue - targetIdle0Value18;
 
-            targetIdle0 = FullMath.mulDiv(targetIdle0Value, 1e18, poolPrice);
-            targetIdle1 = targetIdle1Value;
+            uint256 targetIdle0Amount18 = FullMath.mulDiv(
+                targetIdle0Value18,
+                1e18,
+                poolPrice
+            );
+
+            targetIdle0 = _from18Decimals(targetIdle0Amount18, state.decimals0);
+            targetIdle1 = _from18Decimals(targetIdle1Value18, state.decimals1);
         }
 
         uint256 deploy0 = state.idle0 > targetIdle0
@@ -1098,6 +1107,8 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         address token = Currency.unwrap(currency);
         if (token == address(0)) return 18;
 
+        if (token.code.length == 0) return 18;
+
         try IERC20Decimals(token).decimals() returns (uint8 dec) {
             return dec;
         } catch {
@@ -1110,6 +1121,22 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         for (uint8 i = 0; i < exp; i++) {
             result *= 10;
         }
+    }
+
+    function _to18Decimals(uint256 amount, uint8 decimals) internal pure returns (uint256) {
+        if (decimals == 18) return amount;
+        if (decimals < 18) {
+            return amount * _pow10(18 - decimals);
+        }
+        return amount / _pow10(decimals - 18);
+    }
+
+    function _from18Decimals(uint256 amount, uint8 decimals) internal pure returns (uint256) {
+        if (decimals == 18) return amount;
+        if (decimals < 18) {
+            return amount / _pow10(18 - decimals);
+        }
+        return amount * _pow10(decimals - 18);
     }
 
     function _getPoolATokenClaim(
