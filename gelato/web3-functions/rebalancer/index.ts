@@ -59,8 +59,8 @@ const POOL_CONFIGS: Record<string, PoolConfig> = {
 Web3Function.onRun(async (context: Web3FunctionContext) => {
     const { userArgs } = context;
 
-    // Provider setup - use local Anvil fork for fast response
-    const provider = new providers.StaticJsonRpcProvider("http://127.0.0.1:8545", 11155111);
+    // Provider setup - use Gelato-provided provider
+    const provider = context.provider as providers.Provider;
 
     console.log("------------------------------------------");
     console.log("🤖 Sentinel Multi-Pool Rebalancer");
@@ -111,14 +111,23 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
         }
     }
 
-    const { activeTickLower, activeTickUpper } = poolState;
+    const {
+        activeTickLower,
+        activeTickUpper,
+        priceFeed,
+        decimals0,
+        decimals1,
+        tickSpacing
+    } = poolState;
     console.log(`   - Active Range: [${activeTickLower}, ${activeTickUpper}]`);
 
     // 4. Fetch Oracle Prices (Multi-Pool Aware)
     console.log("📡 Fetching Oracle Data...");
 
     // Fetch Price A (always required)
-    const oracleAAddress = CHAINLINK_FEEDS[config.oracleA];
+    const oracleAAddress = priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000"
+        ? priceFeed
+        : CHAINLINK_FEEDS[config.oracleA];
     const oracleA = new Contract(oracleAAddress, ORACLE_ABI, provider);
     let priceA: number = 0;
     let oracleDecimals: number = 8;
@@ -135,7 +144,8 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
 
     // Fetch Price B (if needed)
     let priceB: number | null = null;
-    if (config.oracleB) {
+    if (!priceFeed || priceFeed === "0x0000000000000000000000000000000000000000") {
+        if (config.oracleB) {
         const oracleBAddress = CHAINLINK_FEEDS[config.oracleB];
         const oracleB = new Contract(oracleBAddress, ORACLE_ABI, provider);
 
@@ -156,9 +166,12 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
             priceB = config.oracleB.includes("USD") ? 1.0 : priceA; // Fallback logic
         }
     }
+    }
 
     // Calculate the TRUE pool ratio
-    const poolRatio = config.calculateRatio(priceA, priceB);
+    const poolRatio = priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000"
+        ? priceA
+        : config.calculateRatio(priceA, priceB);
     console.log(`   🎯 TRUE ${config.name} Ratio: ${poolRatio.toFixed(6)}`);
 
     // 5. Fetch Historical Prices for Volatility (48h)
@@ -205,20 +218,12 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
 
     // 6. Fetch Token Decimals
     const ERC20_ABI = ["function decimals() external view returns (uint8)"];
-    let decimals0 = 18, decimals1 = 18;
-
-    // Default decimals based on pool type
-    if (poolType === "ETH_USDC" || poolType === "ETH_USDT") {
-        decimals0 = 18; // ETH
-        decimals1 = 6;  // USDC/USDT
-    } else if (poolType === "BTC_ETH") {
-        decimals0 = 8;  // BTC (WBTC)
-        decimals1 = 18; // ETH
-    }
-    console.log(`   ✅ Token Decimals: ${decimals0} / ${decimals1}`);
+    const tokenDecimals0 = Number(decimals0 ?? 18);
+    const tokenDecimals1 = Number(decimals1 ?? 18);
+    console.log(`   ✅ Token Decimals: ${tokenDecimals0} / ${tokenDecimals1}`);
 
     // 7. Calculate Tick from Ratio
-    const shift = decimals1 - decimals0;
+    const shift = tokenDecimals1 - tokenDecimals0;
     const adjustedPrice = poolRatio * (10 ** shift);
     const currentTick = Math.floor(Math.log(adjustedPrice) / Math.log(1.0001));
 
@@ -245,9 +250,9 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
         lungState = "MAXIMUM 🔴 (Extreme Vol > 30%)";
     }
 
-    const TICK_SPACING = 60;
-    const newLower = Math.floor((currentTick - widthTicks) / TICK_SPACING) * TICK_SPACING;
-    const newUpper = Math.ceil((currentTick + widthTicks) / TICK_SPACING) * TICK_SPACING;
+    const spacing = Number(tickSpacing ?? 60);
+    const newLower = Math.floor((currentTick - widthTicks) / spacing) * spacing;
+    const newUpper = Math.ceil((currentTick + widthTicks) / spacing) * spacing;
 
     console.log(`🫁 LUNG STRATEGY:`);
     console.log(`   - Volatility: ${volatilityPercent.toFixed(2)}%`);
@@ -290,7 +295,7 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
         callData: [{
             to: hookAddress,
             data: hook.interface.encodeFunctionData("maintain", [
-                poolId, newLower, newUpper, BigInt(widthTicks)
+                poolId, newLower, newUpper, BigInt(Math.round(volatilityPercent * 100))
             ])
         }],
         message: `Rebalancing ${config.name}! New Range: [${newLower}, ${newUpper}]`

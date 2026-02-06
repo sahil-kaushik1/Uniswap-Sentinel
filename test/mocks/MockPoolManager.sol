@@ -34,6 +34,15 @@ contract MockPoolManager {
     int128 public deltaAmount0 = -int128(10);
     int128 public deltaAmount1 = -int128(20);
 
+    address public lastCurrency0;
+    address public lastCurrency1;
+    uint24 public lastFee;
+    int24 public lastTickSpacing;
+    address public lastHooks;
+    int24 public lastTickLower;
+    int24 public lastTickUpper;
+    int256 public lastLiquidityDelta;
+
     function setHook(address hook_) external {
         hook = hook_;
     }
@@ -74,11 +83,19 @@ contract MockPoolManager {
         return ISentinelHookUnlock(hook).unlockCallback(data);
     }
 
-    function modifyLiquidity(PoolKey memory, ModifyLiquidityParams memory params, bytes calldata)
+    function modifyLiquidity(PoolKey memory key, ModifyLiquidityParams memory params, bytes calldata)
         external
-        view
         returns (BalanceDelta callerDelta, BalanceDelta feesAccrued)
     {
+        lastCurrency0 = Currency.unwrap(key.currency0);
+        lastCurrency1 = Currency.unwrap(key.currency1);
+        lastFee = key.fee;
+        lastTickSpacing = key.tickSpacing;
+        lastHooks = address(key.hooks);
+        lastTickLower = params.tickLower;
+        lastTickUpper = params.tickUpper;
+        lastLiquidityDelta = params.liquidityDelta;
+
         if (params.liquidityDelta < 0) {
             callerDelta = toBalanceDelta(deltaAmount0, deltaAmount1);
         } else {
