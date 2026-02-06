@@ -1,11 +1,14 @@
 import { Link, useLocation } from "react-router-dom"
+import { useAccount, useDisconnect } from "wagmi"
 import {
   LayoutDashboard,
   Layers,
   Wallet,
   Bot,
+  Droplets,
   ChevronDown,
   LogOut,
+  Copy,
 } from "lucide-react"
 import {
   Sidebar,
@@ -27,16 +30,24 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { NETWORK_NAME, SENTINEL_HOOK_ADDRESS, POOLS } from "@/lib/addresses"
 
 const navItems = [
   { title: "Dashboard", url: "/app", icon: LayoutDashboard },
   { title: "Pools", url: "/app/pools", icon: Layers },
   { title: "Positions", url: "/app/positions", icon: Wallet },
   { title: "Automation", url: "/app/automation", icon: Bot },
+  { title: "Faucet", url: "/app/faucet", icon: Droplets },
 ]
 
 export function AppSidebar() {
   const location = useLocation()
+  const { address, isConnected } = useAccount()
+  const { disconnect } = useDisconnect()
+
+  const shortAddr = address
+    ? `${address.slice(0, 6)}…${address.slice(-4)}`
+    : "Not Connected"
 
   return (
     <Sidebar variant="inset" collapsible="icon">
@@ -88,7 +99,14 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton>
                   <div className="h-2 w-2 rounded-full bg-[oklch(0.72_0.19_155)]" />
-                  <span>Base Mainnet</span>
+                  <span>{NETWORK_NAME}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton>
+                  <span className="text-xs text-muted-foreground">
+                    Hook: {SENTINEL_HOOK_ADDRESS.slice(0, 6)}…{SENTINEL_HOOK_ADDRESS.slice(-4)}
+                  </span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -106,13 +124,13 @@ export function AppSidebar() {
                 >
                   <Avatar className="h-8 w-8 rounded-lg">
                     <AvatarFallback className="rounded-lg bg-gradient-to-br from-[oklch(0.65_0.25_290)] to-[oklch(0.75_0.15_195)] text-xs text-white">
-                      LP
+                      {isConnected ? "LP" : "??"}
                     </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">0x42...A17</span>
+                    <span className="truncate font-semibold">{shortAddr}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      3 Active Pools
+                      {isConnected ? `${POOLS.length} Managed Pool${POOLS.length !== 1 ? "s" : ""}` : "Connect wallet"}
                     </span>
                   </div>
                   <ChevronDown className="ml-auto size-4" />
@@ -124,14 +142,18 @@ export function AppSidebar() {
                 align="end"
                 sideOffset={4}
               >
-                <DropdownMenuItem>
-                  <Wallet className="mr-2 h-4 w-4" />
-                  Copy Address
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Disconnect
-                </DropdownMenuItem>
+                {isConnected && address && (
+                  <DropdownMenuItem onClick={() => navigator.clipboard.writeText(address)}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy Address
+                  </DropdownMenuItem>
+                )}
+                {isConnected && (
+                  <DropdownMenuItem onClick={() => disconnect()}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Disconnect
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>

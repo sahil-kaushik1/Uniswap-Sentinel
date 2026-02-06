@@ -3,27 +3,47 @@ pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
 import {SentinelAutomation} from "../src/automation/SentinelAutomation.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 /// @title DeploySentinelAutomation
 /// @notice Deploys the SentinelAutomation contract and optionally registers pools
 contract DeploySentinelAutomation is Script {
     function run() external {
         // Load environment variables
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
         address hookAddress = vm.envAddress("SENTINEL_HOOK_ADDRESS");
-        address poolManagerAddress = vm.envAddress("POOL_MANAGER_ADDRESS");
+        address functionsRouter = vm.envAddress("CL_FUNCTIONS_ROUTER");
+        bytes32 donId = vm.envBytes32("CL_DON_ID");
+        uint64 subscriptionId = uint64(vm.envUint("CL_SUB_ID"));
+        uint32 gasLimit = uint32(vm.envUint("CL_GAS_LIMIT"));
+        string memory defaultSource = "";
+        string memory source = vm.envOr("CL_FUNCTIONS_SOURCE", defaultSource);
         
         console.log("Deploying SentinelAutomation...");
         console.log("Hook Address:", hookAddress);
-        console.log("PoolManager Address:", poolManagerAddress);
+        console.log("Functions Router:", functionsRouter);
+        console.log("DON ID:", vm.toString(donId));
+        console.log("Subscription ID:", subscriptionId);
+        console.log("Gas Limit:", gasLimit);
 
-        vm.startBroadcast(deployerPrivateKey);
+        if (deployerPrivateKey != 0) {
+            vm.startBroadcast(deployerPrivateKey);
+        } else {
+            vm.startBroadcast();
+        }
         
-        // Deploy automation contract
+        if (bytes(source).length == 0) {
+            source = vm.readFile("src/automation/functions/rebalancer.js");
+        }
+
+        // Deploy automation contract (Chainlink Functions + Automation)
         SentinelAutomation automation = new SentinelAutomation(
             hookAddress,
-            poolManagerAddress
+            functionsRouter,
+            donId,
+            subscriptionId,
+            gasLimit,
+            source
         );
         
         console.log("SentinelAutomation deployed at:", address(automation));
@@ -35,8 +55,9 @@ contract DeploySentinelAutomation is Script {
         console.log("=== NEXT STEPS ===");
         console.log("1. Register on https://automation.chain.link/");
         console.log("2. Target Contract:", address(automation));
-        console.log("3. Set hook.setMaintainer(", address(automation), ")");
-        console.log("4. Add pools via automation.addPool(poolId)");
+        console.log("3. Fund subscription:", subscriptionId);
+        console.log("4. Set hook.setMaintainer(", address(automation), ")");
+        console.log("5. Add pools via automation.addPool(poolId, poolType)");
     }
 }
 
@@ -44,47 +65,52 @@ contract DeploySentinelAutomation is Script {
 /// @notice Registers pools with an existing SentinelAutomation contract
 contract RegisterPools is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
         address automationAddress = vm.envAddress("AUTOMATION_ADDRESS");
         
-        // Example pool IDs - replace with actual
-        bytes32[] memory poolIds = new bytes32[](1);
-        poolIds[0] = bytes32(0); // Replace with actual pool ID
+        bytes32 poolIdRaw = vm.envBytes32("POOL_ID");
+        uint8 poolType = uint8(vm.envUint("POOL_TYPE"));
         
         SentinelAutomation automation = SentinelAutomation(automationAddress);
         
-        vm.startBroadcast(deployerPrivateKey);
-        
-        for (uint256 i = 0; i < poolIds.length; i++) {
-            PoolId poolId = PoolId.wrap(poolIds[i]);
-            automation.addPool(poolId);
-            console.log("Added pool:", uint256(poolIds[i]));
+        if (deployerPrivateKey != 0) {
+            vm.startBroadcast(deployerPrivateKey);
+        } else {
+            vm.startBroadcast();
         }
+        
+        PoolId poolId = PoolId.wrap(poolIdRaw);
+        automation.addPool(poolId, poolType);
+        console.log("Added pool:", uint256(poolIdRaw));
+        console.log("Pool type:", poolType);
         
         vm.stopBroadcast();
     }
+}
+
+interface ISetMaintainerHook {
+    function setMaintainer(address newMaintainer) external;
+    function maintainer() external view returns (address);
 }
 
 /// @title SetMaintainer
 /// @notice Updates the SentinelHook maintainer to the automation contract
 contract SetMaintainer is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
         address hookAddress = vm.envAddress("SENTINEL_HOOK_ADDRESS");
         address automationAddress = vm.envAddress("AUTOMATION_ADDRESS");
         
-        // Minimal interface for setMaintainer
-        interface ISentinelHook {
-            function setMaintainer(address newMaintainer) external;
-            function maintainer() external view returns (address);
-        }
-        
-        ISentinelHook hook = ISentinelHook(hookAddress);
+        ISetMaintainerHook hook = ISetMaintainerHook(hookAddress);
         
         console.log("Current maintainer:", hook.maintainer());
         console.log("Setting new maintainer:", automationAddress);
         
-        vm.startBroadcast(deployerPrivateKey);
+        if (deployerPrivateKey != 0) {
+            vm.startBroadcast(deployerPrivateKey);
+        } else {
+            vm.startBroadcast();
+        }
         hook.setMaintainer(automationAddress);
         vm.stopBroadcast();
         

@@ -14,10 +14,6 @@ import {
     Currency,
     CurrencyLibrary
 } from "@uniswap/v4-core/src/types/Currency.sol";
-import {
-    SwapParams,
-    ModifyLiquidityParams
-} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {
     AggregatorV3Interface
@@ -184,7 +180,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     /// @notice The Aave v3 Pool contract (shared across all pools)
     IPool public immutable aavePool;
 
-    /// @notice Address authorized to call maintain() (Gelato Automate executor / dedicated msg.sender)
+    /// @notice Address authorized to call maintain() (Chainlink Automation executor)
     address public maintainer;
 
     /// @notice Hook owner (for emergencies and pool initialization)
@@ -215,11 +211,12 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
     constructor(
         IPoolManager _poolManager,
         address _aavePool,
-        address _maintainer
+        address _maintainer,
+        address _owner
     ) BaseHook(_poolManager) {
         aavePool = IPool(_aavePool);
         maintainer = _maintainer;
-        owner = msg.sender;
+        owner = _owner;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -445,21 +442,23 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         if (Currency.unwrap(currency0) == address(0)) {
             require(msg.value >= amount0, "Insufficient ETH");
         } else if (amount0 > 0) {
-            IERC20(Currency.unwrap(currency0)).transferFrom(
+            bool success = IERC20(Currency.unwrap(currency0)).transferFrom(
                 msg.sender,
                 address(this),
                 amount0
             );
+            require(success, "Transfer0 failed");
         }
 
         if (Currency.unwrap(currency1) == address(0)) {
             require(msg.value >= amount1, "Insufficient ETH");
         } else if (amount1 > 0) {
-            IERC20(Currency.unwrap(currency1)).transferFrom(
+            bool success = IERC20(Currency.unwrap(currency1)).transferFrom(
                 msg.sender,
                 address(this),
                 amount1
             );
+            require(success, "Transfer1 failed");
         }
     }
 
@@ -590,7 +589,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         address,
         /* sender */
         PoolKey calldata key,
-        SwapParams calldata,
+        IPoolManager.SwapParams calldata,
         /* params */
         bytes calldata /* hookData */
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
@@ -932,7 +931,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
         (BalanceDelta delta, ) = poolManager.modifyLiquidity(
             key,
-            ModifyLiquidityParams({
+            IPoolManager.ModifyLiquidityParams({
                 tickLower: state.activeTickLower,
                 tickUpper: state.activeTickUpper,
                 liquidityDelta: -int256(int128(liquidity)),
@@ -943,8 +942,9 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
         int128 amt0 = delta.amount0();
         int128 amt1 = delta.amount1();
-        amount0 = amt0 < 0 ? uint256(uint128(-amt0)) : 0;
-        amount1 = amt1 < 0 ? uint256(uint128(-amt1)) : 0;
+        // v4 returns POSITIVE callerDelta for removal (tokens flowing to caller)
+        amount0 = amt0 > 0 ? uint256(uint128(amt0)) : 0;
+        amount1 = amt1 > 0 ? uint256(uint128(amt1)) : 0;
 
         _settleDeltas(state.currency0, state.currency1);
     }
@@ -974,7 +974,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
             poolManager.modifyLiquidity(
                 key,
-                ModifyLiquidityParams({
+                IPoolManager.ModifyLiquidityParams({
                     tickLower: tickLower,
                     tickUpper: tickUpper,
                     liquidityDelta: int256(int128(liquidityMinted)),
@@ -1099,7 +1099,8 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
             (bool success, ) = to.call{value: amount}("");
             require(success, "Transfer failed");
         } else {
-            IERC20(Currency.unwrap(currency)).transfer(to, amount);
+            bool success = IERC20(Currency.unwrap(currency)).transfer(to, amount);
+            require(success, "Transfer failed");
         }
     }
 
@@ -1316,7 +1317,6 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         owner = newOwner;
     }
 
-    /// @notice Emergency withdraw from Aave for a pool
     /// @notice Emergency withdraw from Aave for a pool
     function emergencyWithdrawFromAave(PoolId poolId) external {
         if (msg.sender != owner) revert Unauthorized();

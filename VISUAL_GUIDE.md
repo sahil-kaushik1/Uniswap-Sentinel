@@ -16,7 +16,8 @@
 │  │  │ Range: [100,200] │       │ Range: [-50,150] │      │ Range: [80,180]  │ │ │
 │  │  │ ActiveLiq: 5000  │       │ ActiveLiq: 2000  │      │ ActiveLiq: 1500  │ │ │
 │  │  │ TotalShares: 6000│       │ TotalShares: 2500│      │ TotalShares: 1800│ │ │
-│  │  │ YieldCurrency: 1 │       │ YieldCurrency: 0 │      │ YieldCurrency: 1 │ │ │
+│  │  │ aToken0: aWETH   │       │ aToken0: aWBTC   │      │ aToken0: 0x0     │ │ │
+│  │  │ aToken1: aUSDC   │       │ aToken1: aWETH   │      │ aToken1: aUSDC   │ │ │
 │  │  │ Oracle: ETH/USD  │       │ Oracle: BTC/ETH  │      │ Oracle: ARB/USD  │ │ │
 │  │  │                  │       │                  │      │                  │ │ │
 │  │  │ LP Shares:       │       │ LP Shares:       │      │ LP Shares:       │ │ │
@@ -31,7 +32,7 @@
 │  │ HOT PATH            │  │ COLD PATH           │  │ LP INTERFACE            │  │
 │  │ (beforeSwap)        │  │ (maintain)          │  │                         │  │
 │  │                     │  │                     │  │ depositLiquidity(       │  │
-│  │ • Oracle Check      │  │ • Gelato Only       │  │   poolId, amt0, amt1)   │  │
+│  │ • Oracle Check      │  │ • Chainlink Only    │  │   poolId, amt0, amt1)   │  │
 │  │ • Emit TickCrossed  │  │ • Rebalance Range   │  │                         │  │
 │  │ • <50k gas          │  │ • Aave Deposit/     │  │ withdrawLiquidity(      │  │
 │  │                     │  │   Withdraw          │  │   poolId, shares)       │  │
@@ -46,7 +47,7 @@
     │ PoolManager     │     │ Lending Pool    │         │ Platform        │
     │                 │     │                 │         │                 │
     │ • modifyLiq     │     │ • supply()      │         │ • Data Feeds    │
-    │ • getSlot0      │     │ • withdraw()    │         │ • Gelato Automate│
+    │ • getSlot0      │     │ • withdraw()    │         │ • Chainlink Auto │
     └─────────────────┘     └─────────────────┘         └─────────────────┘
 ```
 
@@ -174,11 +175,11 @@
 
 ---
 
-## Cold Path Flow (Gelato Multi-Pool Rebalancing)
+## Cold Path Flow (Chainlink Multi-Pool Rebalancing)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                          GELATO AUTOMATE EXECUTOR                               │
+│                        CHAINLINK AUTOMATION EXECUTOR                             │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │  Event Monitor: Listening to ALL pools using SentinelHook                       │
@@ -236,9 +237,8 @@
 │     modifyLiquidity(poolKey, -activeLiquidity)                                  │
 │                                                                                  │
 │  3. Withdraw from Aave (consolidate all capital)                                │
-│     aaveBal = AaveAdapter.getAaveBalance(aToken, this)                          │
-│     if (aaveBal > 0)                                                            │
-│       AaveAdapter.withdrawFromAave(state.yieldCurrency, max)                    │
+│     if (aave0 > 0) AaveAdapter.withdrawFromAave(aToken0, aave0)                │
+│     if (aave1 > 0) AaveAdapter.withdrawFromAave(aToken1, aave1)                │
 │                                                                                  │
 │  4. Calculate new split                                                         │
 │     (active, idle) = YieldRouter.calculateIdealRatio(                           │
@@ -251,7 +251,8 @@
 │     state.activeTickUpper = 250                                                 │
 │                                                                                  │
 │  6. Deposit idle to Aave                                                        │
-│     AaveAdapter.depositToAave(state.yieldCurrency, idleAmount)                  │
+│     if (aToken0 != 0) AaveAdapter.depositToAave(currency0, idle0)              │
+│     if (aToken1 != 0) AaveAdapter.depositToAave(currency1, idle1)              │
 │                                                                                  │
 │  7. Emit LiquidityRebalanced(poolId, 190, 250, active, idle)                    │
 │                                                                                  │
@@ -331,16 +332,22 @@ Contract: SentinelHook
     │   ├── activeTickLower: 100
     │   ├── activeTickUpper: 200
     │   ├── activeLiquidity: 5000e18
-    │   ├── priceFeed: 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70 (ETH/USD)
+    │   ├── priceFeed: 0x694A...5306 (ETH/USD)
+    │   ├── priceFeedInverted: false
     │   ├── maxDeviationBps: 500
-    │   ├── yieldCurrency: USDC
-    │   ├── aToken: aUSDC
+    │   ├── aToken0: aWETH
+    │   ├── aToken1: aUSDC
+    │   ├── idle0: 0.5e18 (WETH)
+    │   ├── idle1: 1500e6 (USDC)
+    │   ├── aave0: 1.5e18 (aWETH shares)
+    │   ├── aave1: 2500e6 (aUSDC shares)
+    │   ├── currency0: WETH
+    │   ├── currency1: USDC
+    │   ├── decimals0: 18
+    │   ├── decimals1: 6
+    │   ├── fee: 3000
+    │   ├── tickSpacing: 60
     │   ├── totalShares: 6000e18
-    │   ├── lpShares: mapping
-    │   │   ├── 0xLP1 => 1000e18
-    │   │   ├── 0xLP2 => 2000e18
-    │   │   └── 0xLP3 => 3000e18
-    │   ├── registeredLPs: [0xLP1, 0xLP2, 0xLP3]
     │   └── isInitialized: true
     │
     ├── PoolId(WBTC/ETH) => PoolState
@@ -348,15 +355,21 @@ Contract: SentinelHook
     │   ├── activeTickUpper: 150
     │   ├── activeLiquidity: 2000e18
     │   ├── priceFeed: 0x... (BTC/ETH)
+    │   ├── priceFeedInverted: false
     │   ├── maxDeviationBps: 800 (higher for volatile pair)
-    │   ├── yieldCurrency: WETH
-    │   ├── aToken: aWETH
+    │   ├── aToken0: aWBTC
+    │   ├── aToken1: aWETH
+    │   ├── idle0: 0.01e8 (WBTC)
+    │   ├── idle1: 0.3e18 (WETH)
+    │   ├── aave0: 0.2e8 (aWBTC shares)
+    │   ├── aave1: 0.8e18 (aWETH shares)
+    │   ├── currency0: WBTC
+    │   ├── currency1: WETH
+    │   ├── decimals0: 8
+    │   ├── decimals1: 18
+    │   ├── fee: 3000
+    │   ├── tickSpacing: 60
     │   ├── totalShares: 2500e18
-    │   ├── lpShares: mapping
-    │   │   ├── 0xLP4 => 800e18
-    │   │   ├── 0xLP5 => 1200e18
-    │   │   └── 0xLP6 => 500e18
-    │   ├── registeredLPs: [0xLP4, 0xLP5, 0xLP6]
     │   └── isInitialized: true
     │
     └── PoolId(ARB/USDC) => PoolState
@@ -371,8 +384,8 @@ Contract: SentinelHook
 ```
 Block    Event                           Pool        Parameters
 ─────────────────────────────────────────────────────────────────────────────────
-1000     PoolInitialized                ETH/USDC    oracle=ETH/USD, yield=USDC
-1005     PoolInitialized                WBTC/ETH    oracle=BTC/ETH, yield=WETH
+1000     PoolInitialized                ETH/USDC    oracle=ETH/USD, aToken0=aWETH, aToken1=aUSDC
+1005     PoolInitialized                WBTC/ETH    oracle=BTC/ETH, aToken0=aWBTC, aToken1=aWETH
 1010     LPDeposited                    ETH/USDC    LP1, 1000, 0.5, 1500 shares
 1015     LPDeposited                    WBTC/ETH    LP4, 0.02, 0.3, 800 shares
 1020     LPDeposited                    ETH/USDC    LP2, 2000, 1.0, 2500 shares
@@ -404,7 +417,7 @@ Block    Event                           Pool        Parameters
 │  │  ✓ Range bounds validated (min/max tick width)                          │    │
 │  │  ✓ Reentrancy protection on all external functions                      │    │
 │  │                                                                          │    │
-│  │  GELATO CANNOT bypass these checks                                       │    │
+│  │  CHAINLINK CANNOT bypass these checks                                    │    │
 │  │  Owner CANNOT bypass these checks                                        │    │
 │  └─────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                  │
@@ -472,7 +485,8 @@ Block    Event                           Pool        Parameters
 │   ├───────────────────────┤     ├───────────────────────┤                       │
 │   │ Key: {ETH, USDC,...}  │     │ Key: {LINK, USDC...}  │                       │
 │   │ Oracle: ETH Feed      │     │ Oracle: LINK Feed     │                       │
-│   │ Yield: USDC (aUSDC)   │     │ Yield: USDC (aUSDC)   │                       │
+│   │ aToken0: aWETH        │     │ aToken0: aLINK        │                       │
+│   │ aToken1: aUSDC        │     │ aToken1: aUSDC        │                       │
 │   │ MaxDev: 5% (500bps)   │     │ MaxDev: 8% (800bps)   │                       │
 │   └───────────┬───────────┘     └───────────┬───────────┘                       │
 │               │                             │                                   │

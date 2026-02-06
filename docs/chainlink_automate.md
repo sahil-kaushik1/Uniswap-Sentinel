@@ -1,4 +1,89 @@
-# Chainlink Automation for Sentinel Protocol
+# Chainlink Automation + Functions (Sentinel)
+
+This repository ships a **Chainlink Functions-driven Automation** flow in [src/automation/SentinelAutomation.sol](src/automation/SentinelAutomation.sol) backed by the JS source in [src/automation/functions/rebalancer.js](src/automation/functions/rebalancer.js).
+
+## Overview
+
+Sentinel can be rebalanced by Chainlink Automation with off-chain strategy computation via Chainlink Functions:
+
+1. **Automation** calls `checkUpkeep()` periodically (round-robin per pool).
+2. `performUpkeep()` **sends a Functions request** to compute new ticks + volatility.
+3. Functions callback **calls `handleOracleFulfillment()`**, which executes `SentinelHook.maintain()`.
+
+```mermaid
+sequenceDiagram
+    participant Registry as Automation Registry
+    participant Auto as SentinelAutomation
+    participant Functions as Functions Router
+    participant JS as Rebalancer JS
+    participant Hook as SentinelHook
+
+    Registry->>Auto: checkUpkeep()
+    Auto-->>Registry: (true, performData)
+    Registry->>Auto: performUpkeep(performData)
+    Auto->>Functions: sendRequest(poolType)
+    Functions->>JS: execute rebalancer.js
+    JS-->>Functions: newLower/newUpper/volatility
+    Functions->>Auto: handleOracleFulfillment()
+    Auto->>Hook: maintain(poolId, newLower, newUpper, volatility)
+```
+
+## Contracts
+
+- [src/automation/SentinelAutomation.sol](src/automation/SentinelAutomation.sol)
+  - `checkUpkeep()` picks an active pool (round-robin).
+  - `performUpkeep()` triggers a Functions request.
+  - `handleOracleFulfillment()` decodes response and calls `maintain()`.
+- [src/automation/functions/rebalancer.js](src/automation/functions/rebalancer.js)
+  - Fetches oracle prices and 48h history.
+  - Computes volatility and determines new tick range.
+
+### Pool Types
+
+`SentinelAutomation` expects a **pool type** to match the JS strategy:
+
+| Pool Type | Pair | Notes |
+| --- | --- | --- |
+| 0 | ETH/USDC | Uses ETH/USD + USDC/USD |
+| 1 | WBTC/ETH | Uses BTC/USD + ETH/USD |
+| 2 | ETH/USDT | Uses ETH/USD + USDT/USD |
+
+## Deployment
+
+Use the deployment script [script/DeploySentinelAutomation.s.sol](script/DeploySentinelAutomation.s.sol).
+
+**Required env vars**:
+
+- `PRIVATE_KEY`
+- `SENTINEL_HOOK_ADDRESS`
+- `CL_FUNCTIONS_ROUTER`
+- `CL_DON_ID`
+- `CL_SUB_ID`
+- `CL_GAS_LIMIT`
+- `CL_FUNCTIONS_SOURCE` (optional; if unset, uses [src/automation/functions/rebalancer.js](src/automation/functions/rebalancer.js))
+
+### Deploy
+
+Run the script to deploy the automation contract and print next steps:
+
+- Script: [script/DeploySentinelAutomation.s.sol](script/DeploySentinelAutomation.s.sol)
+
+### Register Pools
+
+Register one pool at a time with env vars:
+
+- `AUTOMATION_ADDRESS`
+- `POOL_ID` (bytes32)
+- `POOL_TYPE` (0/1/2)
+
+### Set Maintainer
+
+Once the automation contract is deployed, set it as the hook maintainer:
+
+- `SENTINEL_HOOK_ADDRESS`
+- `AUTOMATION_ADDRESS`
+
+## Chainlink Automation for Sentinel Protocol
 
 ## Overview
 
@@ -466,19 +551,6 @@ cast send $AUTOMATION_ADDRESS "performUpkeep(bytes)" $PERFORM_DATA --private-key
 
 - **Sepolia**: https://automation.chain.link/sepolia
 - **Base**: https://automation.chain.link/base-sepolia
-
----
-
-## Migration from Gelato
-
-If migrating from existing Gelato setup:
-
-1. **Keep the logic**: The rebalancing logic in `index.ts` can be reused
-2. **Move on-chain**: Core check logic moves to `SentinelAutomation.sol`
-3. **Remove Gelato deps**: Can remove `@gelatonetwork/web3-functions-sdk`
-4. **Update maintainer**: Change from Gelato executor to Chainlink automation contract
-
-The `SentinelHook.maintain()` function signature remains identical!
 
 ---
 

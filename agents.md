@@ -8,7 +8,7 @@ This document is the **Source of Truth** for AI coding agents (Copilot, Cursor, 
 
 **Name:** Sentinel Liquidity Protocol  
 **Type:** Trust-Minimized Agentic Liquidity Management as a Service for Uniswap v4  
-**Core Mechanic:** Hybrid architecture combining an **Immutable Multi-Pool Hook** (Safety) with **Gelato Automate** (Execution)  
+**Core Mechanic:** Hybrid architecture combining an **Immutable Multi-Pool Hook** (Safety) with **Chainlink Automation + Functions** (Execution)  
 **Value Proposition:** LPs deposit liquidity, and Sentinel autonomously manages their positions across ANY Uniswap v4 pool with the hook attached—optimizing range, maximizing yield, and minimizing impermanent loss.
 
 ---
@@ -30,7 +30,7 @@ This document is the **Source of Truth** for AI coding agents (Copilot, Cursor, 
 ### 2.3 Asset Flow Philosophy
 - **Dual-Bucket System:** Capital is split between Active (in-range Uniswap liquidity) and Idle (earning yield in Aave)
 - **Dynamic Rebalancing:** Automation adjusts the Active/Idle ratio based on volatility and market conditions
-- **Unified Yield Currency:** Each pool designates ONE token as the yield-generating asset (deposited to Aave)
+- **Dual-Asset Yield:** Each pool can route BOTH tokens to Aave independently via `aToken0`/`aToken1`. Either can be disabled by setting to `address(0)`
 
 ---
 
@@ -55,7 +55,7 @@ graph TD
     subgraph "External Protocols"
         Aave[Aave v3 Lending]
         Oracle[Chainlink Oracles]
-        Gelato[Gelato Automate]
+        Automation[Chainlink Automation]
     end
     
     Pool1 -->|beforeSwap| Hook
@@ -67,8 +67,8 @@ graph TD
     Hook --> LPRegistry
     Hook <-->|Supply/Withdraw| Aave
     Hook <-->|Price Checks| Oracle
-    Gelato -->|maintain(poolId)| Hook
-    Hook -->|Events| Gelato
+    Automation -->|maintain(poolId)| Hook
+    Hook -->|Events| Automation
 ```
 
 ### 3.2 Per-Pool State Structure
@@ -81,20 +81,36 @@ PoolId (bytes32) => PoolState {
     
     // Oracle & Safety
     address priceFeed          // Chainlink oracle for this pair
+    bool priceFeedInverted     // If oracle returns token0 per token1
     uint256 maxDeviationBps    // Pool-specific deviation threshold
     
-    // Yield Configuration
-    Currency yieldCurrency     // Which token goes to Aave
-    address aToken             // Corresponding aToken address
+    // Yield Configuration (dual-asset)
+    address aToken0            // aToken for currency0 (address(0) disables yield)
+    address aToken1            // aToken for currency1 (address(0) disables yield)
+    uint256 idle0              // Idle balance of currency0 held by hook
+    uint256 idle1              // Idle balance of currency1 held by hook
+    uint256 aave0              // aToken0 shares owned by this pool
+    uint256 aave1              // aToken1 shares owned by this pool
+    
+    // Cached Pool Config
+    Currency currency0
+    Currency currency1
+    uint8 decimals0
+    uint8 decimals1
+    uint24 fee
+    int24 tickSpacing
     
     // LP Accounting
     uint256 totalShares
-    mapping(address => uint256) lpShares
     
-    // Tracking
-    address[] registeredLPs
+    // Status
     bool isInitialized
 }
+
+// Separate mappings (not in struct):
+mapping(PoolId => mapping(address => uint256)) lpShares
+mapping(PoolId => address[]) registeredLPs
+mapping(PoolId => mapping(address => bool)) isLPRegistered
 ```
 
 ### 3.3 Complete Asset Flow Diagram
@@ -107,8 +123,8 @@ flowchart TB
         Hook -->|4. Hold tokens| Contract[Hook Contract Balance]
     end
     
-    subgraph MAINTAIN ["Gelato Maintain Cycle"]
-        Gelato[Gelato Automate] -->|1. Monitor TickCrossed| Events[Event Listener]
+    subgraph MAINTAIN ["Chainlink Maintain Cycle"]
+        Automation[Chainlink Automation] -->|1. Monitor TickCrossed| Events[Event Listener]
         Events -->|2. Calculate strategy| Compute[Volatility Analysis]
         Compute -->|3. Decide execution| Consensus[Resolver/Web3 Function]
         Consensus -->|4. maintain(poolId, range, vol)| MaintainCall[Hook.maintain]
@@ -170,22 +186,22 @@ sequenceDiagram
     end
 ```
 
-### 3.5 Cold Path (Gelato Rebalancing) - Complexity Allowed
+### 3.5 Cold Path (Chainlink Automation) - Complexity Allowed
 ```mermaid
 sequenceDiagram
-    participant Gelato as Gelato Automate
+    participant Automation as Chainlink Automation
     participant Hook as SentinelHook
     participant PM as PoolManager
     participant Aave as Aave v3
     participant YR as YieldRouter
     
-    Note over Gelato: Triggered by TickCrossed event or schedule
+    Note over Automation: Triggered by TickCrossed event or schedule
     
-    Gelato->>Gelato: Fetch market data (volatility, prices)
-    Gelato->>Gelato: Calculate optimal range
-    Gelato->>Gelato: Resolver/Web3 Function determines execution
+    Automation->>Automation: Fetch market data (volatility, prices)
+    Automation->>Automation: Calculate optimal range
+    Automation->>Automation: Resolver/Web3 Function determines execution
     
-    Gelato->>Hook: maintain(poolId, newTickLower, newTickUpper, volatility)
+    Automation->>Hook: maintain(poolId, newTickLower, newTickUpper, volatility)
     
     Hook->>Hook: Validate caller == maintainer
     Hook->>PM: unlock(maintainData)
@@ -195,16 +211,18 @@ sequenceDiagram
     Hook->>PM: modifyLiquidity(-activeLiquidity) [Withdraw]
     PM-->>Hook: (amount0, amount1)
     
-    Hook->>Aave: withdraw(yieldCurrency, max)
-    Aave-->>Hook: withdrawn amount
+    Hook->>Aave: withdraw(aToken0, aave0) [if aave0 > 0]
+    Hook->>Aave: withdraw(aToken1, aave1) [if aave1 > 0]
+    Aave-->>Hook: withdrawn amounts
     
     Hook->>YR: calculateIdealRatio(totalBalance, range, volatility)
     YR-->>Hook: (activeAmount, idleAmount)
     
     Hook->>PM: modifyLiquidity(+newLiquidity) [Deploy]
     
-    alt idleAmount > MIN_YIELD_DEPOSIT
-        Hook->>Aave: supply(yieldCurrency, idleAmount)
+    alt idle0 or idle1 > 0
+        Hook->>Aave: supply(currency0, idle0) [if aToken0 != 0]
+        Hook->>Aave: supply(currency1, idle1) [if aToken1 != 0]
     end
     
     Hook->>Hook: emit LiquidityRebalanced(poolId, range, amounts)
@@ -260,18 +278,18 @@ Each pool may have different token pairs requiring different oracles:
 
 ### Rule 5: LP Share Accounting is Per-Pool
 ```solidity
-// ✅ CORRECT: Pool-scoped shares
-poolStates[poolId].lpShares[msg.sender] += shares;
+// ✅ CORRECT: Pool-scoped shares (lpShares is a separate mapping)
+lpShares[poolId][msg.sender] += shares;
 poolStates[poolId].totalShares += shares;
 
 // ❌ WRONG: Global shares
-lpShares[msg.sender] += shares;
+globalShares[msg.sender] += shares;
 ```
 
-### Rule 6: Yield Currency Configuration
-- Each pool designates ONE token as the yield currency (deposited to Aave)
-- Must be one of the pool's two tokens
-- aToken address must be configured at pool initialization
+### Rule 6: Dual-Asset Yield Configuration
+- Each pool can route BOTH tokens to Aave via `aToken0` and `aToken1`
+- Set to `address(0)` to disable yield for that token
+- aToken addresses are configured at pool initialization via `initializePool()`
 
 ### Rule 7: Automation Maintains One Pool at a Time
 ```solidity
@@ -286,7 +304,7 @@ function maintain(
 
 ### Rule 8: Test in Fork with Real Pools
 ```bash
-forge test --fork-url $BASE_RPC_URL -vvv
+forge test --fork-url $SEPOLIA_RPC_URL -vvv
 ```
 
 ---
@@ -304,10 +322,11 @@ SentinelHook.sol
 │   └── poolStates (mapping PoolId => PoolState)
 │
 ├── Hook Permissions
-│   └── beforeSwap: true (ONLY this hook)
+│   ├── beforeInitialize: true (register pool)
+│   └── beforeSwap: true (circuit breaker)
 │
 ├── LP Interface
-│   ├── initializePool(PoolKey, oracleConfig)
+│   ├── initializePool(PoolKey, priceFeed, priceFeedInverted, aToken0, aToken1, maxDeviationBps, tickLower, tickUpper)
 │   ├── depositLiquidity(PoolId, amount0, amount1)
 │   └── withdrawLiquidity(PoolId, shares)
 │
@@ -339,11 +358,11 @@ SentinelHook.sol
 ### 5.3 Event Architecture (Automation Consumption)
 ```solidity
 // Pool lifecycle
-event PoolInitialized(PoolId indexed poolId, address priceFeed, Currency yieldCurrency);
+event PoolInitialized(PoolId indexed poolId, address priceFeed, bool priceFeedInverted, address aToken0, address aToken1);
 
 // LP events (per pool)
-event LPDeposited(PoolId indexed poolId, address indexed lp, uint256 amount0, uint256 amount1, uint256 shares);
-event LPWithdrawn(PoolId indexed poolId, address indexed lp, uint256 amount0, uint256 amount1, uint256 shares);
+event LPDeposited(PoolId indexed poolId, address indexed lp, uint256 amount0, uint256 amount1, uint256 sharesReceived);
+event LPWithdrawn(PoolId indexed poolId, address indexed lp, uint256 amount0, uint256 amount1, uint256 sharesBurned);
 
 // Strategy events (automation listens to these)
 event TickCrossed(PoolId indexed poolId, int24 tickLower, int24 tickUpper, int24 currentTick);
@@ -365,16 +384,29 @@ event IdleCapitalWithdrawn(PoolId indexed poolId, address yieldProtocol, uint256
 | `libraries/OracleLib.sol` | **Safety** | `checkPriceDeviation()` - accepts any Chainlink feed |
 | `libraries/YieldRouter.sol` | **Math** | `calculateIdealRatio()` - volatility-adjusted split |
 | `libraries/AaveAdapter.sol` | **Yield Integration** | Supply/withdraw for any supported Aave asset |
+| `automation/SentinelAutomation.sol` | **Chainlink Automation** | Functions-driven upkeep, round-robin pool rebalancing |
+| `automation/functions/rebalancer.js` | **Off-Chain Strategy** | Fetch prices, calculate volatility, determine new ticks |
+
+### Scripts (`/script`)
+| File | Role |
+|------|------|
+| `DeployFullDemo.s.sol` | **Full Sepolia deployment** — mock tokens, Aave, oracle, hook, pools, approvals |
+| `DeploySentinel.s.sol` | Production-style deploy (real Aave + Chainlink) |
+| `DeploySentinelAutomation.s.sol` | Deploy SentinelAutomation + register pools |
+| `DeployMockEnvironment.s.sol` | Deploy mock environment for local testing |
 
 ### Workflows (`/workflows`)
 | File | Role | Key Functionality |
 |------|------|-------------------|
-| `gelato-automate.md` | **Gelato Automate** | Task/resolver notes for per-pool maintain triggers |
+| `sentinel-workflow.yaml` | **Chainlink Automation** | Workflow spec for per-pool maintain triggers |
 
-### Tests (`/test`)
-| File | Role | Coverage |
-|------|------|----------|
-| `SentinelIntegration.t.sol` | **Integration** | Multi-pool deployment, LP lifecycle, rebalancing |
+### Tests (`/test`) — 81 tests passing
+| Directory | Files | Coverage |
+|-----------|-------|----------|
+| `unit/` | `SentinelHookUnit.t.sol`, `OracleLib.t.sol`, `YieldRouter.t.sol`, `AaveAdapter.t.sol`, `DeploySentinel.t.sol` | Core logic, per-pool state, LP accounting, oracle checks |
+| `fuzz/` | `OracleLibFuzz.t.sol`, `YieldRouterFuzz.t.sol`, `AaveAdapterFuzz.t.sol`, `YieldRouterInvariant.t.sol` | Fuzz + invariant testing for math libraries |
+| `integration/` | `SentinelIntegration.t.sol` | Multi-pool deployment, LP lifecycle, rebalancing |
+| `mocks/` | `MockERC20`, `MockAavePool`, `MockOracle`, `MockPoolManager`, `RatioOracle`, `SentinelHookHarness` | Test infrastructure |
 
 ---
 
@@ -386,18 +418,18 @@ Sentinel can manage ANY Uniswap v4 pool that:
 3. Has a corresponding Chainlink price feed (for safety)
 
 ### Example Pool Configurations
-| Pool | Yield Currency | Oracle | Use Case |
-|------|----------------|--------|----------|
-| ETH/USDC | USDC | ETH/USD | Blue chip, stable yield |
-| WBTC/ETH | ETH | BTC/ETH | Volatile, wider ranges |
-| ARB/USDC | USDC | ARB/USD | L2 native, governance token |
-| stETH/ETH | ETH | stETH/ETH | LST arbitrage, tight ranges |
+| Pool | aToken0 Yield | aToken1 Yield | Oracle | Use Case |
+|------|---------------|---------------|--------|----------|
+| ETH/USDC | aWETH | aUSDC | ETH/USD | Blue chip, dual yield |
+| WBTC/ETH | aWBTC | aWETH | BTC/ETH | Volatile, wider ranges |
+| ARB/USDC | — (disabled) | aUSDC | ARB/USD | L2 native, single-side yield |
+| stETH/ETH | aStETH | aWETH | stETH/ETH | LST arbitrage, tight ranges |
 
 ---
 
 ## 8. External Resources & Documentation
 
-- **Gelato Automate Reference:** [docs/gelato_automate.md](./docs/gelato_automate.md)
+- **Chainlink Automation Reference:** [docs/chainlink_automate.md](./docs/chainlink_automate.md)
 - **Tech Stack Details:** [docs/tech_stack.md](./docs/tech_stack.md)
 - **Visual Guide:** [VISUAL_GUIDE.md](./VISUAL_GUIDE.md)
 - **Uniswap v4 Docs:** [https://docs.uniswap.org/contracts/v4/overview](https://docs.uniswap.org/contracts/v4/overview)

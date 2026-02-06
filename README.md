@@ -20,7 +20,7 @@ Traditional liquidity provision on Uniswap requires constant monitoring and reba
 
 | Problem | Sentinel Solution |
 |---------|-------------------|
-| **Trust** | Hybrid architecture: Immutable Hook (safety) + Gelato Automate (execution) |
+| **Trust** | Hybrid architecture: Immutable Hook (safety) + Chainlink Automation/Functions (execution) |
 | **Idle Capital** | Automatic routing to Aave v3 for lending yield |
 | **Multi-Pool** | Single hook contract serves unlimited pools |
 | **Gas Efficiency** | Shared infrastructure reduces per-LP costs |
@@ -52,7 +52,7 @@ graph TD
     subgraph "External Protocols"
         Aave[Aave v3 - Yield]
         Oracle[Chainlink - Safety]
-        Gelato[Gelato Automate - Execution]
+        Automation[Chainlink Automation + Functions]
     end
     
     LP1 -->|Deposit| Hook
@@ -68,7 +68,7 @@ graph TD
     
     Hook <-->|Yield| Aave
     Hook <-->|Price Check| Oracle
-    Gelato -->|maintain()| Hook
+    Automation -->|maintain()| Hook
 ```
 
 ### Two-Path Design
@@ -79,9 +79,9 @@ graph TD
 - **Logic:** Oracle price deviation check (circuit breaker)
 - **Output:** TickCrossed event if price moved outside range
 
-#### ❄️ Cold Path (Gelato Rebalancing)
+#### ❄️ Cold Path (Chainlink Automation)
 - **Trigger:** TickCrossed event or scheduled interval
-- **Executor:** Gelato Automate (dedicated msg.sender recommended)
+- **Executor:** Chainlink Automation (Functions optional for off-chain strategy)
 - **Logic:** Calculate optimal range and Active/Idle split off-chain, then execute `maintain()`
 - **Output:** `maintain()` transaction to rebalance
 
@@ -102,9 +102,9 @@ graph TD
 ```
 1. Price moves outside active range
 2. beforeSwap emits TickCrossed event
-3. Gelato Automate detects event (or cron)
+3. Chainlink Automation detects event (or cron)
 4. Strategy computes optimal new range
-5. Gelato calls maintain(poolId, newRange, volatility)
+5. Chainlink Automation calls maintain(poolId, newRange, volatility)
 7. Hook: Withdraw old range → Calculate split → Deploy new range + Aave
 ```
 
@@ -125,23 +125,41 @@ graph TD
 sentinel-protocol/
 ├── src/                           # Smart Contracts
 │   ├── SentinelHook.sol          # Multi-pool hook (main contract)
-│   └── libraries/
-│       ├── OracleLib.sol         # Price deviation checks
-│       ├── YieldRouter.sol       # Active/Idle split calculations
-│       └── AaveAdapter.sol       # Aave v3 integration
+│   ├── libraries/
+│   │   ├── OracleLib.sol         # Price deviation checks
+│   │   ├── YieldRouter.sol       # Active/Idle split calculations
+│   │   └── AaveAdapter.sol       # Aave v3 integration
+│   └── automation/
+│       ├── SentinelAutomation.sol # Chainlink Automation + Functions
+│       └── functions/
+│           └── rebalancer.js     # Off-chain strategy computation
 │
-├── test/                          # Foundry Tests
-│   └── SentinelIntegration.t.sol # Fork tests
+├── test/                          # Foundry Tests (81 passing)
+│   ├── unit/                     # SentinelHookUnit, OracleLib, YieldRouter, AaveAdapter
+│   ├── fuzz/                     # Fuzz + invariant testing
+│   ├── integration/              # Multi-pool lifecycle tests
+│   └── mocks/                    # MockERC20, MockAavePool, MockOracle, etc.
 │
 ├── script/                        # Deployment Scripts
-│   └── DeploySentinel.s.sol
+│   ├── DeployFullDemo.s.sol      # Full Sepolia deploy (tokens, Aave, hook, pools)
+│   ├── DeploySentinel.s.sol      # Production-style deploy
+│   ├── DeploySentinelAutomation.s.sol # Automation contract deploy
+│   └── DeployMockEnvironment.s.sol
 │
-├── workflows/                     # Gelato Automate
-│   └── gelato-automate.md        # Task/resolver notes
+├── frontend/                      # React Frontend (Vite + wagmi + shadcn/ui)
+│   └── src/
+│       ├── pages/                # Dashboard, Pools, Positions, Automation, Faucet
+│       ├── components/           # Deposit/Withdraw/Mint dialogs, Sidebar
+│       ├── hooks/                # use-sentinel.ts, use-tokens.ts
+│       └── lib/                  # addresses.ts, abi.ts, wagmi.ts
+│
+├── workflows/                     # Chainlink Automation
+│   └── sentinel-workflow.yaml    # Workflow spec (Chainlink)
 │
 ├── docs/                          # Documentation
-│   ├── gelato_automate.md        # Gelato Automate reference
+│   ├── chainlink_automate.md     # Chainlink Automation reference
 │   ├── whitepaper.md             # Protocol whitepaper
+│   ├── reactive_strategy.md      # Rebalancing strategy details
 │   └── tech_stack.md             # Technology details
 │
 ├── agents.md                      # AI Agent context (START HERE)
@@ -155,8 +173,8 @@ sentinel-protocol/
 
 ### Prerequisites
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) (`forge`, `cast`, `anvil`)
-- Node.js 18+ (for frontend, optional)
-- Base RPC URL (Alchemy/Infura)
+- Node.js 18+ (for frontend)
+- Sepolia RPC URL (Alchemy/Infura)
 
 ### Installation
 
@@ -180,7 +198,7 @@ forge test --match-path "test/unit/*.t.sol"
 forge test --match-path "test/fuzz/*.t.sol"
 
 # Integration tests (fork)
-forge test --match-path "test/integration/*.t.sol" --fork-url $BASE_RPC_URL -vvv
+forge test --match-path "test/integration/*.t.sol" --fork-url $SEPOLIA_RPC_URL -vvv
 
 # Gas report
 forge test --gas-report
@@ -189,12 +207,39 @@ forge test --gas-report
 ### Deployment
 
 ```bash
-# Deploy to Base testnet
-forge script script/DeploySentinel.s.sol --rpc-url $BASE_TESTNET_RPC --broadcast
+# Deploy full demo to Sepolia (mock tokens, Aave, oracle, hook, pools)
+forge script script/DeployFullDemo.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
 
-# Verify on Basescan
-forge verify-contract <ADDRESS> SentinelHook --chain base
+# Verify on Etherscan
+forge verify-contract <ADDRESS> SentinelHook --chain sepolia
 ```
+
+Optional env var for hook deployment:
+
+- `CHAINLINK_MAINTAINER` (sets the initial `maintainer`; defaults to deployer)
+
+### Automation (Chainlink Functions)
+
+```bash
+# Deploy SentinelAutomation (Chainlink Functions + Automation)
+forge script script/DeploySentinelAutomation.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
+
+# Register a pool (repeat per pool)
+forge script script/DeploySentinelAutomation.s.sol:RegisterPools --rpc-url $SEPOLIA_RPC_URL --broadcast
+
+# Set hook maintainer to the automation contract
+forge script script/DeploySentinelAutomation.s.sol:SetMaintainer --rpc-url $SEPOLIA_RPC_URL --broadcast
+```
+
+Required env vars for automation:
+
+- `PRIVATE_KEY`
+- `SENTINEL_HOOK_ADDRESS`
+- `CL_FUNCTIONS_ROUTER`
+- `CL_DON_ID`
+- `CL_SUB_ID`
+- `CL_GAS_LIMIT`
+- `CL_FUNCTIONS_SOURCE` (optional)
 
 ---
 
@@ -207,12 +252,12 @@ Sentinel can manage ANY Uniswap v4 pool that:
 
 ### Example Configurations
 
-| Pool | Yield Currency | Oracle | Risk Profile |
-|------|----------------|--------|--------------|
-| ETH/USDC | USDC | ETH/USD | Blue chip |
-| WBTC/ETH | ETH | BTC/ETH | High volatility |
-| ARB/USDC | USDC | ARB/USD | L2 native |
-| stETH/ETH | ETH | stETH/ETH | LST arbitrage |
+| Pool | aToken0 Yield | aToken1 Yield | Oracle | Risk Profile |
+|------|---------------|---------------|--------|--------------|
+| ETH/USDC | aWETH | aUSDC | ETH/USD | Blue chip |
+| WBTC/ETH | aWBTC | aWETH | BTC/ETH | High volatility |
+| ARB/USDC | — (disabled) | aUSDC | ARB/USD | L2 native |
+| stETH/ETH | aStETH | aWETH | stETH/ETH | LST arbitrage |
 
 ---
 
@@ -227,8 +272,8 @@ Sentinel can manage ANY Uniswap v4 pool that:
 │ ├── LP share accounting (proportional claims only)         │
 │ └── Range validation (min/max bounds)                      │
 ├─────────────────────────────────────────────────────────────┤
-│ Level 2: Gelato Automate (Execution)                       │
-│ ├── Whitelisted executor (dedicated msg.sender recommended)│
+│ Level 2: Chainlink Automation (Execution)                  │
+│ ├── Whitelisted executor (automation contract)             │
 │ ├── Event/cron driven execution                             │
 │ └── No custody of LP funds                                  │
 ├─────────────────────────────────────────────────────────────┤
@@ -255,18 +300,41 @@ This project addresses the track criteria by:
 |-----------|----------------|
 | **Reliability** | Hook acts as hard "circuit breaker" - agents can't drain funds |
 | **Composability** | Deep Uniswap v4 + Aave v3 + Chainlink integration |
-| **Decentralization** | Automation execution via Gelato network; safety enforced on-chain |
+| **Decentralization** | Automation execution via Chainlink; safety enforced on-chain |
 | **Innovation** | First multi-pool LP management service on v4 |
 
 ---
 
-## 📚 Documentation
+## �️ Frontend
+
+The Sentinel frontend is a React single-page app for interacting with deployed pools on Sepolia.
+
+**Stack:** React 19 + Vite + TypeScript + wagmi v3 + viem v2 + shadcn/ui + Tailwind CSS v4
+
+### Running Locally
+
+```bash
+cd frontend
+npm install
+npm run dev     # http://localhost:5173
+```
+
+### Pages
+- **Dashboard** — TVL, share prices, yield distribution charts
+- **Pools** — Pool detail cards with deposit/withdraw dialogs
+- **Positions** — Per-wallet LP share view
+- **Automation** — Maintainer status and rebalance history
+- **Faucet** — One-click mock token claims for testing
+
+---
+
+## �📚 Documentation
 
 | Document | Purpose |
 |----------|---------|
 | **[agents.md](./agents.md)** | 🤖 AI Agent context - START HERE |
 | **[VISUAL_GUIDE.md](./VISUAL_GUIDE.md)** | 📊 Diagrams and flow charts |
-| **[docs/gelato_automate.md](./docs/gelato_automate.md)** | ⚙️ Gelato Automate reference |
+| **[docs/chainlink_automate.md](./docs/chainlink_automate.md)** | ⚙️ Chainlink Automation reference |
 | **[docs/tech_stack.md](./docs/tech_stack.md)** | 📚 Technology deep dive |
 
 ---
@@ -290,7 +358,7 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 - **Uniswap v4 Docs:** [docs.uniswap.org/contracts/v4](https://docs.uniswap.org/contracts/v4/overview)
 - **Aave v3 Docs:** [aave.com/docs/aave-v3](https://aave.com/docs/aave-v3/overview)
-- **Gelato Automate:** [docs.gelato.cloud](https://docs.gelato.cloud/)
+- **Chainlink Automation:** [automation.chain.link](https://automation.chain.link/)
 - **Foundry Book:** [book.getfoundry.sh](https://book.getfoundry.sh/)
 
 ---

@@ -1,3 +1,26 @@
+# Sentinel Frontend
+
+UI for the Sentinel Liquidity Protocol. This frontend currently renders **demo data** and is intended for showcasing flows while contract integrations are finalized.
+
+## Setup
+
+```bash
+npm install
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+npm run preview
+```
+
+## Notes
+
+- No wallet integration is wired yet.
+- Replace the demo datasets in the page components under [frontend/src/pages](frontend/src/pages) when wiring live on-chain data.
+- Theme is configured via [frontend/src/index.css](frontend/src/index.css) and the shadcn/ui components.
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

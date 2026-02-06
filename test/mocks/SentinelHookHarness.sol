@@ -9,8 +9,8 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 contract SentinelHookHarness is SentinelHook {
-    constructor(IPoolManager _poolManager, address _aavePool, address _maintainer)
-        SentinelHook(_poolManager, _aavePool, _maintainer)
+    constructor(IPoolManager _poolManager, address _aavePool, address _maintainer, address _owner)
+        SentinelHook(_poolManager, _aavePool, _maintainer, _owner)
     {}
 
     function validateHookAddress(BaseHook) internal pure override {}

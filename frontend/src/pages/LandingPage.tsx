@@ -40,7 +40,7 @@ const features = [
     icon: Activity,
     title: "Dynamic Range Control",
     description:
-      "Gelato Automate triggers maintain cycles when ticks cross boundaries, widening ranges during high volatility.",
+      "Chainlink Automation triggers maintain cycles when ticks cross boundaries, widening ranges during high volatility.",
   },
   {
     icon: TrendingUp,
@@ -72,7 +72,7 @@ const architecture = [
     title: "Maintain Cycle",
     badge: "Cold Path",
     description:
-      "Gelato orchestrates withdrawal, consolidation, ratio calculation, and redeployment — one pool at a time.",
+      "Chainlink Automation orchestrates withdrawal, consolidation, ratio calculation, and redeployment — one pool at a time.",
     items: [
       "Unlock → Withdraw active liquidity",
       "Recall idle capital from Aave",
@@ -98,7 +98,7 @@ const security = [
     icon: Bot,
     title: "Maintainer-Gated Execution",
     description:
-      "Only authorized Gelato automation can rebalance and move capital. No human intervention needed.",
+      "Only authorized Chainlink automation can rebalance and move capital. No human intervention needed.",
   },
 ]
 
@@ -174,8 +174,8 @@ export function LandingPage() {
                 Uniswap v4 pool.
               </h1>
               <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground">
-                Sentinel combines an immutable multi-pool hook with Gelato
-                Automate to keep LPs in-range, optimize yield, and protect
+                Sentinel combines an immutable multi-pool hook with Chainlink
+                Automation to keep LPs in-range, optimize yield, and protect
                 against oracle deviation.
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
@@ -403,20 +403,21 @@ export function LandingPage() {
               Automation that scales
             </h2>
             <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-              Gelato monitors TickCrossed events, calculates new ranges, and
-              triggers maintain for a single pool at a time.
+              Chainlink Automation monitors TickCrossed events, calculates new
+              ranges, and triggers maintain for a single pool at a time.
             </p>
           </div>
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="border-border/30 bg-card/50">
               <CardHeader>
                 <Badge variant="secondary" className="mb-2 w-fit text-xs">
-                  Gelato Automate
+                  Chainlink Automation
                 </Badge>
                 <CardTitle>Resolver-Driven Execution</CardTitle>
                 <CardDescription>
-                  Strategists define volatility-aware ranges; Gelato handles
-                  reliable, gas-efficient execution across all managed pools.
+                  Strategists define volatility-aware ranges; Chainlink
+                  Automation handles reliable, gas-efficient execution across
+                  all managed pools.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -485,7 +486,7 @@ export function LandingPage() {
             Sentinel Liquidity Protocol
           </div>
           <p className="text-xs text-muted-foreground">
-            Built for Uniswap v4 LPs · Powered by Gelato & Aave
+            Built for Uniswap v4 LPs · Powered by Chainlink & Aave
           </p>
         </div>
       </footer>

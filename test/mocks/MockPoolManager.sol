@@ -6,7 +6,8 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
@@ -31,8 +32,8 @@ contract MockPoolManager {
     Currency public lastTakeCurrency;
     uint256 public lastTakeAmount;
 
-    int128 public deltaAmount0 = -int128(10);
-    int128 public deltaAmount1 = -int128(20);
+    int128 public deltaAmount0 = int128(10);
+    int128 public deltaAmount1 = int128(20);
 
     address public lastCurrency0;
     address public lastCurrency1;
@@ -104,7 +105,7 @@ contract MockPoolManager {
         feesAccrued = BalanceDeltaLibrary.ZERO_DELTA;
     }
 
-    function callBeforeSwap(PoolKey calldata key, SwapParams calldata params)
+    function callBeforeSwap(PoolKey calldata key, IPoolManager.SwapParams calldata params)
         external
         returns (bytes4, BeforeSwapDelta, uint24)
     {

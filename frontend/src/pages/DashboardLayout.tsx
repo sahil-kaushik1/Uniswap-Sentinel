@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Link } from "react-router-dom"
 import { ArrowLeft } from "lucide-react"
+import { ConnectButton } from "@/components/connect-button"
 
 export function DashboardLayout() {
   return (
@@ -22,10 +23,7 @@ export function DashboardLayout() {
             </Link>
           </Button>
           <div className="ml-auto flex items-center gap-2">
-            <div className="flex items-center gap-2 rounded-full border border-border/50 bg-muted/30 px-3 py-1.5 text-xs">
-              <div className="h-2 w-2 rounded-full bg-[oklch(0.72_0.19_155)]" />
-              Connected
-            </div>
+            <ConnectButton />
           </div>
         </header>
 

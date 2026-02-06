@@ -19,13 +19,13 @@ contract DeploySentinelUnitTest is Test {
         MockAavePool aavePool = new MockAavePool();
 
         uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG);
-        bytes memory constructorArgs = abi.encode(IPoolManager(address(poolManager)), address(aavePool), deployer);
+        bytes memory constructorArgs = abi.encode(IPoolManager(address(poolManager)), address(aavePool), deployer, deployer);
         (address expectedAddress, bytes32 salt) =
             HookMiner.find(deployer, flags, type(SentinelHook).creationCode, constructorArgs);
 
         vm.prank(deployer);
         SentinelHook hook =
-            new SentinelHook{salt: salt}(IPoolManager(address(poolManager)), address(aavePool), deployer);
+            new SentinelHook{salt: salt}(IPoolManager(address(poolManager)), address(aavePool), deployer, deployer);
         assertEq(address(hook), expectedAddress);
 
         vm.setEnv("PRIVATE_KEY", "1");
@@ -43,13 +43,13 @@ contract DeploySentinelUnitTest is Test {
         MockAavePool aavePool = new MockAavePool();
 
         uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG);
-        bytes memory constructorArgs = abi.encode(IPoolManager(address(poolManager)), address(aavePool), deployer);
+        bytes memory constructorArgs = abi.encode(IPoolManager(address(poolManager)), address(aavePool), deployer, deployer);
         (address expectedAddress, bytes32 salt) =
             HookMiner.find(deployer, flags, type(SentinelHook).creationCode, constructorArgs);
 
         vm.prank(deployer);
         SentinelHook hook =
-            new SentinelHook{salt: salt}(IPoolManager(address(poolManager)), address(aavePool), deployer);
+            new SentinelHook{salt: salt}(IPoolManager(address(poolManager)), address(aavePool), deployer, deployer);
         assertEq(address(hook), expectedAddress);
 
         vm.setEnv("PRIVATE_KEY", "2");

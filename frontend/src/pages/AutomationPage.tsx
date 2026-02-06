@@ -27,14 +27,23 @@ import {
   AlertTriangle,
   Zap,
   RotateCcw,
+  Loader2,
 } from "lucide-react"
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
+import { parseUnits } from "viem"
+import { sentinelHookAbi } from "@/lib/abi"
+import { SENTINEL_HOOK_ADDRESS, POOLS, etherscanTx } from "@/lib/addresses"
+import { useMaintainer, useOwner } from "@/hooks/use-sentinel"
 
+const hookAddress = SENTINEL_HOOK_ADDRESS as `0x${string}`
+
+// Static automation history (would come from event indexing in production)
 const automationHistory = [
   {
     id: 1,
     pool: "ETH/USDC",
     action: "maintain()",
-    newRange: "[-204720, -194280]",
+    newRange: "[-887220, 887220]",
     volatility: "2.1%",
     gasUsed: "342,100",
     time: "12 min ago",
@@ -43,9 +52,9 @@ const automationHistory = [
   },
   {
     id: 2,
-    pool: "ARB/USDC",
+    pool: "ETH/USDT",
     action: "maintain()",
-    newRange: "[-18600, -12400]",
+    newRange: "[-887220, 887220]",
     volatility: "3.4%",
     gasUsed: "298,400",
     time: "45 min ago",
@@ -54,57 +63,65 @@ const automationHistory = [
   },
   {
     id: 3,
-    pool: "WBTC/ETH",
+    pool: "ETH/WBTC",
     action: "maintain()",
-    newRange: "[-72800, -65200]",
+    newRange: "[-887220, 887220]",
     volatility: "4.8%",
     gasUsed: "—",
     time: "1h ago",
     status: "pending",
     txHash: "—",
   },
-  {
-    id: 4,
-    pool: "stETH/ETH",
-    action: "maintain()",
-    newRange: "[-120, 120]",
-    volatility: "0.3%",
-    gasUsed: "285,200",
-    time: "6h ago",
-    status: "success",
-    txHash: "0xij90...kl12",
-  },
-  {
-    id: 5,
-    pool: "ETH/USDC",
-    action: "maintain()",
-    newRange: "[-205200, -193800]",
-    volatility: "2.8%",
-    gasUsed: "—",
-    time: "8h ago",
-    status: "reverted",
-    txHash: "0xmn34...op56",
-  },
 ]
 
-const gelato = {
-  taskId: "0x7a3b...9f12",
-  status: "Active",
-  executor: "Gelato Network",
-  trigger: "TickCrossed Event",
-  cooldown: "5 min",
-  totalExecutions: 142,
-  successRate: "97.2%",
-  avgGas: "310,400",
-}
-
 export function AutomationPage() {
-  const [poolId, setPoolId] = useState("")
-  const [tickLower, setTickLower] = useState("")
-  const [tickUpper, setTickUpper] = useState("")
-  const [volatility, setVolatility] = useState("")
-  const [targetActive, setTargetActive] = useState("")
-  const [maxDeviation, setMaxDeviation] = useState("")
+  const { address, isConnected } = useAccount()
+  const { data: maintainer } = useMaintainer()
+  const { data: owner } = useOwner()
+
+  const [poolIdx, setPoolIdx] = useState(0)
+  const [tickLower, setTickLower] = useState("-887220")
+  const [tickUpper, setTickUpper] = useState("887220")
+  const [volatility, setVolatility] = useState("200")
+
+  const { writeContract: maintain, data: maintainHash, isPending: isMaintaining, error: maintainError } = useWriteContract()
+  const { isSuccess: maintainConfirmed, data: receipt } = useWaitForTransactionReceipt({ hash: maintainHash })
+
+  const isMaintainerOrOwner = address && (
+    address.toLowerCase() === maintainer?.toString().toLowerCase() ||
+    address.toLowerCase() === owner?.toString().toLowerCase()
+  )
+
+  const handleMaintain = () => {
+    const pool = POOLS[poolIdx]
+    maintain({
+      address: hookAddress,
+      abi: sentinelHookAbi,
+      functionName: "maintain",
+      args: [
+        pool.id,
+        Number(tickLower),
+        Number(tickUpper),
+        parseUnits(volatility, 0),
+      ],
+    })
+  }
+
+  const handleReset = () => {
+    setPoolIdx(0)
+    setTickLower("-887220")
+    setTickUpper("887220")
+    setVolatility("200")
+  }
+
+  const chainlinkAutomation = {
+    status: isConnected ? "Active" : "Unknown",
+    executor: "Chainlink Automation",
+    trigger: "TickCrossed Event",
+    cooldown: "5 min",
+    maintainerAddr: maintainer ? `${String(maintainer).slice(0, 6)}…${String(maintainer).slice(-4)}` : "—",
+    ownerAddr: owner ? `${String(owner).slice(0, 6)}…${String(owner).slice(-4)}` : "—",
+  }
 
   return (
     <div className="space-y-6">
@@ -113,11 +130,11 @@ export function AutomationPage() {
           Automation Controls
         </h1>
         <p className="text-sm text-muted-foreground">
-          Configure and monitor Gelato-powered automation for pool maintenance.
+          Configure and monitor Chainlink-powered automation for pool maintenance.
         </p>
       </div>
 
-      {/* Gelato Status */}
+      {/* Chainlink Status */}
       <Card className="border-border/30 bg-card/80">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -126,52 +143,50 @@ export function AutomationPage() {
                 <Bot className="h-5 w-5 text-[oklch(0.75_0.15_195)]" />
               </div>
               <div>
-                <CardTitle>Gelato Automate</CardTitle>
+                <CardTitle>Chainlink Automation</CardTitle>
                 <CardDescription>
-                  Task ID: {gelato.taskId}
+                  Hook: {SENTINEL_HOOK_ADDRESS.slice(0, 10)}…
                 </CardDescription>
               </div>
             </div>
             <Badge className="bg-[oklch(0.72_0.19_155_/_0.15)] text-[oklch(0.72_0.19_155)]">
-              {gelato.status}
+              {chainlinkAutomation.status}
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             <div>
               <p className="text-xs text-muted-foreground">Executor</p>
-              <p className="mt-1 text-sm font-medium">{gelato.executor}</p>
+              <p className="mt-1 text-sm font-medium">{chainlinkAutomation.executor}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Trigger</p>
-              <p className="mt-1 text-sm font-medium">{gelato.trigger}</p>
+              <p className="mt-1 text-sm font-medium">{chainlinkAutomation.trigger}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Cooldown</p>
-              <p className="mt-1 text-sm font-medium">{gelato.cooldown}</p>
+              <p className="mt-1 text-sm font-medium">{chainlinkAutomation.cooldown}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Executions</p>
+              <p className="text-xs text-muted-foreground">Maintainer</p>
+              <p className="mt-1 text-sm font-medium font-mono">{chainlinkAutomation.maintainerAddr}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Owner</p>
+              <p className="mt-1 text-sm font-medium font-mono">{chainlinkAutomation.ownerAddr}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Your Role</p>
               <p className="mt-1 text-sm font-medium">
-                {gelato.totalExecutions}
+                {isMaintainerOrOwner ? (
+                  <Badge className="bg-[oklch(0.72_0.19_155_/_0.15)] text-[oklch(0.72_0.19_155)]">
+                    {address?.toLowerCase() === owner?.toString().toLowerCase() ? "Owner" : "Maintainer"}
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground">Viewer</span>
+                )}
               </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Success Rate</p>
-              <p className="mt-1 text-sm font-medium text-[oklch(0.72_0.19_155)]">
-                {gelato.successRate}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Avg Gas</p>
-              <p className="mt-1 text-sm font-medium">{gelato.avgGas}</p>
-            </div>
-            <div className="flex items-end">
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-                <Settings className="h-3 w-3" />
-                Configure
-              </Button>
             </div>
           </div>
         </CardContent>
@@ -187,7 +202,8 @@ export function AutomationPage() {
               <div>
                 <CardTitle>Maintain Cycle</CardTitle>
                 <CardDescription>
-                  Trigger a pool-specific maintain call with new range inputs
+                  Trigger a pool-specific maintain call with new range inputs.
+                  {!isMaintainerOrOwner && isConnected && " (Only owner/maintainer can execute)"}
                 </CardDescription>
               </div>
             </div>
@@ -195,22 +211,23 @@ export function AutomationPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Pool ID
-                </label>
-                <Input
-                  placeholder="0x..."
-                  value={poolId}
-                  onChange={(e) => setPoolId(e.target.value)}
-                  className="bg-muted/30"
-                />
+                <label className="text-xs font-medium text-muted-foreground">Pool</label>
+                <select
+                  value={poolIdx}
+                  onChange={(e) => setPoolIdx(Number(e.target.value))}
+                  className="flex h-9 w-full rounded-md border border-input bg-muted/30 px-3 py-1 text-sm shadow-xs transition-colors"
+                >
+                  {POOLS.map((pool, i) => (
+                    <option key={pool.name} value={i}>{pool.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground">
-                  Volatility (%)
+                  Volatility (bps)
                 </label>
                 <Input
-                  placeholder="2.5"
+                  placeholder="200"
                   value={volatility}
                   onChange={(e) => setVolatility(e.target.value)}
                   className="bg-muted/30"
@@ -223,7 +240,7 @@ export function AutomationPage() {
                   New Tick Lower
                 </label>
                 <Input
-                  placeholder="-204720"
+                  placeholder="-887220"
                   value={tickLower}
                   onChange={(e) => setTickLower(e.target.value)}
                   className="bg-muted/30"
@@ -234,20 +251,62 @@ export function AutomationPage() {
                   New Tick Upper
                 </label>
                 <Input
-                  placeholder="-194280"
+                  placeholder="887220"
                   value={tickUpper}
                   onChange={(e) => setTickUpper(e.target.value)}
                   className="bg-muted/30"
                 />
               </div>
             </div>
+
+            {/* Pool ID display */}
+            <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground mb-1">Pool ID:</p>
+              <p className="text-xs font-mono break-all">{POOLS[poolIdx]?.id}</p>
+            </div>
+
+            {maintainError && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                <p className="text-xs text-destructive">{maintainError.message.slice(0, 200)}</p>
+              </div>
+            )}
+
+            {maintainConfirmed && receipt && (
+              <div className="rounded-lg border border-[oklch(0.72_0.19_155_/_0.3)] bg-[oklch(0.72_0.19_155_/_0.1)] p-3">
+                <p className="text-xs text-[oklch(0.72_0.19_155)]">
+                  ✓ Maintain executed!{" "}
+                  <a
+                    href={etherscanTx(receipt.transactionHash)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    View tx
+                  </a>
+                </p>
+              </div>
+            )}
+
             <Separator className="opacity-50" />
             <div className="flex gap-3">
-              <Button className="flex-1 bg-gradient-to-r from-[oklch(0.65_0.25_290)] to-[oklch(0.75_0.15_195)] text-white hover:opacity-90">
-                <Play className="mr-2 h-4 w-4" />
-                Simulate Maintain
+              <Button
+                className="flex-1 bg-gradient-to-r from-[oklch(0.65_0.25_290)] to-[oklch(0.75_0.15_195)] text-white hover:opacity-90"
+                onClick={handleMaintain}
+                disabled={!isConnected || isMaintaining}
+              >
+                {isMaintaining ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Executing...
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    Execute Maintain
+                  </>
+                )}
               </Button>
-              <Button variant="outline">
+              <Button variant="outline" onClick={handleReset}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Reset
               </Button>
@@ -263,44 +322,37 @@ export function AutomationPage() {
               <div>
                 <CardTitle>Yield Routing Policy</CardTitle>
                 <CardDescription>
-                  Adjust active vs idle split based on risk profile
+                  View the active/idle split strategy managed by YieldRouter
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">
-                Target Active (%)
-              </label>
-              <Input
-                placeholder="70"
-                value={targetActive}
-                onChange={(e) => setTargetActive(e.target.value)}
-                className="bg-muted/30"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">
-                Max Deviation (bps)
-              </label>
-              <Input
-                placeholder="500"
-                value={maxDeviation}
-                onChange={(e) => setMaxDeviation(e.target.value)}
-                className="bg-muted/30"
-              />
+            <div className="rounded-lg border border-border/30 bg-muted/20 p-3 space-y-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Default Active Target</p>
+                <p className="text-sm font-medium">60% (volatility-adjusted)</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Min Idle Reserve</p>
+                <p className="text-sm font-medium">10% of total capital</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Yield Protocol</p>
+                <p className="text-sm font-medium">Aave v3 (Mock)</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Strategy</p>
+                <p className="text-sm font-medium">Dual-token yield on both pool assets</p>
+              </div>
             </div>
             <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">
-                The YieldRouter will calculate the ideal active/idle split based
-                on volatility. These values set the upper bounds for policy
-                enforcement.
+                The YieldRouter calculates the ideal active/idle split based
+                on volatility. Maintain calls automatically route idle capital
+                to Aave v3 for yield generation.
               </p>
             </div>
-            <Button variant="outline" className="w-full">
-              Update Policy
-            </Button>
           </CardContent>
         </Card>
       </div>
@@ -312,7 +364,7 @@ export function AutomationPage() {
             <div>
               <CardTitle>Execution History</CardTitle>
               <CardDescription>
-                Recent Gelato maintain() executions across all pools
+                Recent maintain() executions across all pools
               </CardDescription>
             </div>
             <Button size="sm" variant="outline" className="gap-1.5 text-xs">
@@ -344,16 +396,10 @@ export function AutomationPage() {
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {entry.action}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {entry.newRange}
-                  </TableCell>
+                  <TableCell className="font-mono text-xs">{entry.newRange}</TableCell>
                   <TableCell>{entry.volatility}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {entry.gasUsed}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {entry.time}
-                  </TableCell>
+                  <TableCell className="text-muted-foreground">{entry.gasUsed}</TableCell>
+                  <TableCell className="text-muted-foreground">{entry.time}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1.5">
                       {entry.status === "success" ? (

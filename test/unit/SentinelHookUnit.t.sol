@@ -14,7 +14,6 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {OracleLib} from "../../src/libraries/OracleLib.sol";
@@ -51,7 +50,7 @@ contract SentinelHookUnitTest is Test {
         aToken0 = aavePool.initReserve(address(token0), "aToken0", "aTK0");
         oracle = new MockOracle(8, 2000e8);
 
-        hook = new SentinelHookHarness(IPoolManager(address(poolManager)), address(aavePool), maintainer);
+        hook = new SentinelHookHarness(IPoolManager(address(poolManager)), address(aavePool), maintainer, owner);
         poolManager.setHook(address(hook));
 
         key = PoolKey({
@@ -212,7 +211,11 @@ contract SentinelHookUnitTest is Test {
         vm.expectEmit(true, true, true, true);
         emit SentinelHook.TickCrossed(poolId, -120, 120, 200);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         poolManager.callBeforeSwap(key, params);
     }
 
@@ -220,7 +223,11 @@ contract SentinelHookUnitTest is Test {
         // pool price at tick 0 => 1.0, oracle set to 100 => big deviation
         oracle.setRoundData(1, 100e8, block.timestamp, block.timestamp, 1);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         vm.expectRevert(OracleLib.PriceDeviationTooHigh.selector);
         poolManager.callBeforeSwap(key, params);
     }
@@ -230,7 +237,11 @@ contract SentinelHookUnitTest is Test {
         uint256 stale = block.timestamp - (OracleLib.MAX_ORACLE_STALENESS + 1);
         oracle.setRoundData(1, 1e8, stale, stale, 1);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         vm.expectRevert(OracleLib.StaleOracleData.selector);
         poolManager.callBeforeSwap(key, params);
     }
@@ -238,7 +249,11 @@ contract SentinelHookUnitTest is Test {
     function testBeforeSwap_RevertsOnAnsweredInRoundTooLow() public {
         oracle.setRoundData(2, 1e8, block.timestamp, block.timestamp, 1);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         vm.expectRevert(OracleLib.StaleOracleData.selector);
         poolManager.callBeforeSwap(key, params);
     }
@@ -246,7 +261,11 @@ contract SentinelHookUnitTest is Test {
     function testBeforeSwap_RevertsOnOracleUpdatedAtZero() public {
         oracle.setRoundData(1, 1e8, block.timestamp, 0, 1);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         vm.expectRevert(OracleLib.StaleOracleData.selector);
         poolManager.callBeforeSwap(key, params);
     }
@@ -254,7 +273,11 @@ contract SentinelHookUnitTest is Test {
     function testBeforeSwap_RevertsOnInvalidOraclePrice() public {
         oracle.setRoundData(1, 0, block.timestamp, block.timestamp, 1);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         vm.expectRevert(OracleLib.InvalidOraclePrice.selector);
         poolManager.callBeforeSwap(key, params);
     }
@@ -262,7 +285,11 @@ contract SentinelHookUnitTest is Test {
     function testBeforeSwap_SucceedsWhenPriceMatchesOracle() public {
         oracle.setRoundData(1, 1e8, block.timestamp, block.timestamp, 1);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         poolManager.callBeforeSwap(key, params);
     }
 
@@ -283,7 +310,11 @@ contract SentinelHookUnitTest is Test {
 
         _setOracleToPoolPrice(sqrtPriceX96, 18, 18, true);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         poolManager.callBeforeSwap(invKey, params);
     }
 
@@ -304,7 +335,11 @@ contract SentinelHookUnitTest is Test {
 
         _setOracleToPoolPrice(sqrtPriceX96, 18, 6, false);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         poolManager.callBeforeSwap(decKey, params);
     }
 
@@ -318,7 +353,11 @@ contract SentinelHookUnitTest is Test {
             hooks: IHooks(address(hook))
         });
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: 1e18,
+            sqrtPriceLimitX96: 0
+        });
         (bytes4 selector,,) = poolManager.callBeforeSwap(otherKey, params);
         assertEq(selector, hook.beforeSwap.selector);
     }
@@ -330,7 +369,7 @@ contract SentinelHookUnitTest is Test {
         vm.expectEmit(true, true, true, true);
         emit SentinelHook.TickCrossed(poolId, -120, 120, 120);
 
-        SwapParams memory params = SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 1e18, sqrtPriceLimitX96: 0});
         poolManager.callBeforeSwap(key, params);
     }
 

@@ -6,6 +6,7 @@ import { DashboardHome } from "@/pages/DashboardHome"
 import { PoolsPage } from "@/pages/PoolsPage"
 import { PositionsPage } from "@/pages/PositionsPage"
 import { AutomationPage } from "@/pages/AutomationPage"
+import { FaucetPage } from "@/pages/FaucetPage"
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route path="pools" element={<PoolsPage />} />
             <Route path="positions" element={<PositionsPage />} />
             <Route path="automation" element={<AutomationPage />} />
+            <Route path="faucet" element={<FaucetPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

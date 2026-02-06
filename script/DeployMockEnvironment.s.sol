@@ -106,7 +106,8 @@ contract DeployMockEnvironment is Script {
         bytes memory constructorArgs = abi.encode(
             poolManager,
             address(mockAave),
-            maintainer
+            maintainer,
+            deployer
         );
 
         (address expectedAddress, bytes32 salt) = HookMiner.find(
@@ -119,7 +120,8 @@ contract DeployMockEnvironment is Script {
         hook = new SentinelHook{salt: salt}(
             IPoolManager(poolManager),
             address(mockAave),
-            maintainer
+            maintainer,
+            deployer
         );
         console.log("Sentinel Hook:", address(hook));
 

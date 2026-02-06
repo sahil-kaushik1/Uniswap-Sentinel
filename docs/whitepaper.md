@@ -13,7 +13,7 @@ Uniswap v3/v4 liquidity provision is capital‑inefficient and operationally dem
 ## 2. Sentinel Solution
 Sentinel provides **Liquidity‑as‑a‑Service** with:
 - **Safety on‑chain:** A hook validates swap safety via oracle checks in the hot path.
-- **Execution off‑chain:** Gelato Automate or other keepers rebalance ranges on demand.
+- **Execution off‑chain:** Chainlink Automation + Functions rebalance ranges on demand.
 - **Idle yield routing:** Unused capital is deployed to Aave v3.
 - **Multi‑pool design:** One hook serves many pools, with strict per‑pool state isolation.
 
@@ -27,7 +27,7 @@ The protocol consists of:
 ### 3.1 Multi‑Pool Isolation
 All state is keyed by `PoolId` derived from `PoolKey`. Each pool has:
 - Active range and liquidity
-- Yield configuration (asset, aToken)
+- Dual-asset yield configuration (aToken0, aToken1)
 - LP shares and total shares
 - Oracle feed and deviation threshold
 
@@ -69,7 +69,7 @@ On every swap, the hook checks:
 This protects LPs from extreme price manipulation and oracle drift.
 
 ## 7. Yield Routing
-Idle assets (the configured `yieldCurrency`) are deposited into Aave v3. Withdrawals are proportional on LP exit or during rebalancing.
+Idle assets for both pool tokens (tracked via `idle0`/`idle1`) can be deposited into Aave v3 via their respective aTokens (`aToken0`/`aToken1`). Either token can have yield disabled by setting its aToken to `address(0)`. Withdrawals are proportional on LP exit or during rebalancing.
 
 ## 8. Security Considerations
 - **Hot path gas ceiling:** `beforeSwap` is optimized and avoids storage writes.
@@ -81,8 +81,10 @@ Idle assets (the configured `yieldCurrency`) are deposited into Aave v3. Withdra
 - NAV calculation is simplified and may require oracle‑based valuation for production precision.
 - Pool key reconstruction is simplified; production deployment should store full `PoolKey`.
 
-## 10. Testing Strategy
-- Fork tests validate multi‑pool initialization, deposits, withdrawals, rebalancing, and Aave integration.
+## 10. Testing Strategy- **Unit tests** (`test/unit/`): SentinelHookUnit, OracleLib, YieldRouter, AaveAdapter, DeploySentinel
+- **Fuzz tests** (`test/fuzz/`): OracleLibFuzz, YieldRouterFuzz, AaveAdapterFuzz, YieldRouterInvariant
+- **Integration tests** (`test/integration/`): Multi‑pool deployment, LP lifecycle, rebalancing
+- **81 tests passing** across all suites- Fork tests validate multi‑pool initialization, deposits, withdrawals, rebalancing, and Aave integration.
 - Tests can run on:
   - **Sepolia fork** (using `SEPOLIA_RPC_URL`)
   - **Anvil fork** (run Anvil with `--fork-url`)

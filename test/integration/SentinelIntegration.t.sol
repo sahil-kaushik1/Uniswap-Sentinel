@@ -83,11 +83,11 @@ contract SentinelIntegrationTest is Test {
 
         // Deploy the hook at a valid Uniswap v4 hook address (address encodes hook permission flags)
         uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG);
-        bytes memory constructorArgs = abi.encode(IPoolManager(POOL_MANAGER), AAVE_POOL, maintainer);
+        bytes memory constructorArgs = abi.encode(IPoolManager(POOL_MANAGER), AAVE_POOL, maintainer, address(this));
         (address expectedAddress, bytes32 salt) =
             HookMiner.find(address(this), flags, type(SentinelHook).creationCode, constructorArgs);
 
-        hook = new SentinelHook{salt: salt}(IPoolManager(POOL_MANAGER), AAVE_POOL, maintainer);
+        hook = new SentinelHook{salt: salt}(IPoolManager(POOL_MANAGER), AAVE_POOL, maintainer, address(this));
         assertEq(address(hook), expectedAddress);
 
         console.log("Sentinel Hook deployed at:", address(hook));
