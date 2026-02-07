@@ -29,7 +29,8 @@ library YieldRouter {
         uint256 volatility
     ) internal pure returns (uint256 activeAmount, int256 idleAmount) {
         if (totalBalance < MIN_ACTIVE_LIQUIDITY) {
-            revert InsufficientLiquidity();
+            // Not enough to enforce a minimum active threshold; keep all active and avoid revert
+            return (totalBalance, 0);
         }
 
         // Calculate range width in ticks
@@ -46,11 +47,19 @@ library YieldRouter {
         // Base allocation: narrower ranges need more active capital
         // For a range of 200 ticks at low volatility, we want ~70% active
         // For a range of 1000 ticks at high volatility, we want ~40% active
-        uint256 baseActiveRatio = _calculateBaseActiveRatio(rangeWidth, volatility);
+        uint256 baseActiveRatio = _calculateBaseActiveRatio(
+            rangeWidth,
+            volatility
+        );
 
         // Adjust based on position relative to range
-        uint256 adjustedActiveRatio =
-            _adjustForPosition(baseActiveRatio, inRange, distanceToLower, distanceToUpper, rangeWidth);
+        uint256 adjustedActiveRatio = _adjustForPosition(
+            baseActiveRatio,
+            inRange,
+            distanceToLower,
+            distanceToUpper,
+            rangeWidth
+        );
 
         // Calculate actual amounts
         activeAmount = (totalBalance * adjustedActiveRatio) / 10000; // adjustedActiveRatio is in basis points
@@ -61,7 +70,9 @@ library YieldRouter {
         }
 
         // Calculate idle amount (can be negative if we need to withdraw from yield)
-        uint256 idleUnsigned = totalBalance > activeAmount ? totalBalance - activeAmount : 0;
+        uint256 idleUnsigned = totalBalance > activeAmount
+            ? totalBalance - activeAmount
+            : 0;
 
         // Only deposit to yield if above threshold (gas optimization)
         if (idleUnsigned < MIN_YIELD_DEPOSIT) {
@@ -76,11 +87,16 @@ library YieldRouter {
     /// @param rangeWidth Width of the liquidity range in ticks
     /// @param volatility Market volatility in basis points
     /// @return ratio Active liquidity ratio in basis points (0-10000)
-    function _calculateBaseActiveRatio(int24 rangeWidth, uint256 volatility) private pure returns (uint256 ratio) {
+    function _calculateBaseActiveRatio(
+        int24 rangeWidth,
+        uint256 volatility
+    ) private pure returns (uint256 ratio) {
         // Narrow ranges (< 400 ticks) need more active capital
         // Wide ranges (> 2000 ticks) can afford more idle capital
 
-        uint256 absRangeWidth = rangeWidth < 0 ? uint256(uint24(-rangeWidth)) : uint256(uint24(rangeWidth));
+        uint256 absRangeWidth = rangeWidth < 0
+            ? uint256(uint24(-rangeWidth))
+            : uint256(uint24(rangeWidth));
 
         // Base ratio calculation:
         // - Very narrow (< 200 ticks): 80-90% active
@@ -141,7 +157,8 @@ library YieldRouter {
         // If very close to edge (< 10% of range), increase active buffer
         int24 edgeThreshold = rangeWidth / 10;
 
-        bool nearEdge = (distanceToLower < edgeThreshold) || (distanceToUpper < edgeThreshold);
+        bool nearEdge = (distanceToLower < edgeThreshold) ||
+            (distanceToUpper < edgeThreshold);
 
         if (nearEdge) {
             // Add 10% more to active when near edge
@@ -162,11 +179,11 @@ library YieldRouter {
     /// @param requiredActive Required active amount
     /// @param availableBalance Available balance not in yield
     /// @return withdrawAmount Amount to withdraw from yield (0 if no withdrawal needed)
-    function calculateYieldWithdrawal(uint256 currentYieldBalance, uint256 requiredActive, uint256 availableBalance)
-        internal
-        pure
-        returns (uint256 withdrawAmount)
-    {
+    function calculateYieldWithdrawal(
+        uint256 currentYieldBalance,
+        uint256 requiredActive,
+        uint256 availableBalance
+    ) internal pure returns (uint256 withdrawAmount) {
         // If available balance covers the requirement, no withdrawal needed
         if (availableBalance >= requiredActive) {
             return 0;
@@ -176,6 +193,8 @@ library YieldRouter {
         uint256 shortfall = requiredActive - availableBalance;
 
         // Withdraw the shortfall from yield (capped at current yield balance)
-        withdrawAmount = shortfall > currentYieldBalance ? currentYieldBalance : shortfall;
+        withdrawAmount = shortfall > currentYieldBalance
+            ? currentYieldBalance
+            : shortfall;
     }
 }

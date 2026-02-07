@@ -8,7 +8,14 @@ export function useTokenBalance(token: `0x${string}`) {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [address!],
-    query: { enabled: !!address && token !== "0x0000000000000000000000000000000000000000" },
+    query: {
+      enabled: !!address && token !== "0x0000000000000000000000000000000000000000",
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -22,7 +29,14 @@ export function useTokenAllowance(
     abi: erc20Abi,
     functionName: "allowance",
     args: [address!, spender],
-    query: { enabled: !!address && token !== "0x0000000000000000000000000000000000000000" },
+    query: {
+      enabled: !!address && token !== "0x0000000000000000000000000000000000000000",
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -31,7 +45,12 @@ export function useTokenSymbol(token: `0x${string}`) {
     address: token,
     abi: erc20Abi,
     functionName: "symbol",
-    query: { enabled: token !== "0x0000000000000000000000000000000000000000" },
+    query: {
+      enabled: token !== "0x0000000000000000000000000000000000000000",
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -40,6 +59,11 @@ export function useTokenDecimals(token: `0x${string}`) {
     address: token,
     abi: erc20Abi,
     functionName: "decimals",
-    query: { enabled: token !== "0x0000000000000000000000000000000000000000" },
+    query: {
+      enabled: token !== "0x0000000000000000000000000000000000000000",
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }

@@ -36,7 +36,14 @@ export function usePoolState(poolId: `0x${string}`) {
     abi: sentinelHookAbi,
     functionName: "getPoolState",
     args: [poolId],
-    query: { enabled: isDeployed && poolId !== "0x0000000000000000000000000000000000000000000000000000000000000000" },
+    query: {
+      enabled: isDeployed && poolId !== "0x0000000000000000000000000000000000000000000000000000000000000000",
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -46,7 +53,14 @@ export function useSharePrice(poolId: `0x${string}`) {
     abi: sentinelHookAbi,
     functionName: "getSharePrice",
     args: [poolId],
-    query: { enabled: isDeployed && poolId !== "0x0000000000000000000000000000000000000000000000000000000000000000" },
+    query: {
+      enabled: isDeployed && poolId !== "0x0000000000000000000000000000000000000000000000000000000000000000",
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -57,7 +71,14 @@ export function useLPPosition(poolId: `0x${string}`) {
     abi: sentinelHookAbi,
     functionName: "getLPPosition",
     args: [poolId, address!],
-    query: { enabled: isDeployed && !!address },
+    query: {
+      enabled: isDeployed && !!address,
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -66,7 +87,14 @@ export function useTotalPools() {
     address: hookAddress,
     abi: sentinelHookAbi,
     functionName: "getTotalPools",
-    query: { enabled: isDeployed },
+    query: {
+      enabled: isDeployed,
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -76,7 +104,14 @@ export function useLPCount(poolId: `0x${string}`) {
     abi: sentinelHookAbi,
     functionName: "getLPCount",
     args: [poolId],
-    query: { enabled: isDeployed },
+    query: {
+      enabled: isDeployed,
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -85,7 +120,14 @@ export function useOwner() {
     address: hookAddress,
     abi: sentinelHookAbi,
     functionName: "owner",
-    query: { enabled: isDeployed },
+    query: {
+      enabled: isDeployed,
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -94,7 +136,14 @@ export function useMaintainer() {
     address: hookAddress,
     abi: sentinelHookAbi,
     functionName: "maintainer",
-    query: { enabled: isDeployed },
+    query: {
+      enabled: isDeployed,
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -110,7 +159,14 @@ export function useAllPoolStates() {
 
   return useReadContracts({
     contracts,
-    query: { enabled: isDeployed },
+    query: {
+      enabled: isDeployed,
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -124,7 +180,14 @@ export function useAllSharePrices() {
 
   return useReadContracts({
     contracts,
-    query: { enabled: isDeployed },
+    query: {
+      enabled: isDeployed,
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }
 
@@ -139,6 +202,13 @@ export function useAllLPPositions() {
 
   return useReadContracts({
     contracts,
-    query: { enabled: isDeployed && !!address },
+    query: {
+      enabled: isDeployed && !!address,
+      refetchInterval: 3000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
   })
 }

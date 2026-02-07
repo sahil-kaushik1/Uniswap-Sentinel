@@ -6,13 +6,15 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 interface ISentinelHookUnlock {
-    function unlockCallback(bytes calldata data) external returns (bytes memory);
+    function unlockCallback(
+        bytes calldata data
+    ) external returns (bytes memory);
 }
 
 contract MockPoolManager {
@@ -48,8 +50,16 @@ contract MockPoolManager {
         hook = hook_;
     }
 
-    function setSlot0(PoolId poolId, uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) external {
-        bytes32 slot = keccak256(abi.encodePacked(PoolId.unwrap(poolId), POOLS_SLOT));
+    function setSlot0(
+        PoolId poolId,
+        uint160 sqrtPriceX96,
+        int24 tick,
+        uint24 protocolFee,
+        uint24 lpFee
+    ) external {
+        bytes32 slot = keccak256(
+            abi.encodePacked(PoolId.unwrap(poolId), POOLS_SLOT)
+        );
         uint256 data = uint256(sqrtPriceX96);
         data |= uint256(uint24(uint24(tick))) << 160;
         data |= uint256(protocolFee) << 184;
@@ -57,11 +67,18 @@ contract MockPoolManager {
         extsloadData[slot] = bytes32(data);
     }
 
-    function setCurrencyDelta(address target, Currency currency, int256 delta) external {
+    function setCurrencyDelta(
+        address target,
+        Currency currency,
+        int256 delta
+    ) external {
         bytes32 key;
         assembly ("memory-safe") {
             mstore(0, and(target, 0xffffffffffffffffffffffffffffffffffffffff))
-            mstore(32, and(currency, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(
+                32,
+                and(currency, 0xffffffffffffffffffffffffffffffffffffffff)
+            )
             key := keccak256(0, 64)
         }
         exttloadData[key] = bytes32(uint256(delta));
@@ -84,10 +101,11 @@ contract MockPoolManager {
         return ISentinelHookUnlock(hook).unlockCallback(data);
     }
 
-    function modifyLiquidity(PoolKey memory key, ModifyLiquidityParams memory params, bytes calldata)
-        external
-        returns (BalanceDelta callerDelta, BalanceDelta feesAccrued)
-    {
+    function modifyLiquidity(
+        PoolKey memory key,
+        IPoolManager.ModifyLiquidityParams memory params,
+        bytes calldata
+    ) external returns (BalanceDelta callerDelta, BalanceDelta feesAccrued) {
         lastCurrency0 = Currency.unwrap(key.currency0);
         lastCurrency1 = Currency.unwrap(key.currency1);
         lastFee = key.fee;
@@ -105,10 +123,10 @@ contract MockPoolManager {
         feesAccrued = BalanceDeltaLibrary.ZERO_DELTA;
     }
 
-    function callBeforeSwap(PoolKey calldata key, IPoolManager.SwapParams calldata params)
-        external
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
+    function callBeforeSwap(
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params
+    ) external returns (bytes4, BeforeSwapDelta, uint24) {
         return IHooks(hook).beforeSwap(address(this), key, params, "");
     }
 

@@ -3,7 +3,15 @@ import { WagmiProvider } from "wagmi"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { config } from "@/lib/wagmi"
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      staleTime: 0,
+    },
+  },
+})
 
 export function Web3Provider({ children }: { children: ReactNode }) {
   return (

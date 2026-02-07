@@ -6,32 +6,20 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {
-    BeforeSwapDelta,
-    BeforeSwapDeltaLibrary
-} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {
-    Currency,
-    CurrencyLibrary
-} from "@uniswap/v4-core/src/types/Currency.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
-import {
-    AggregatorV3Interface
-} from "foundry-chainlink-toolkit/src/interfaces/feeds/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from "foundry-chainlink-toolkit/src/interfaces/feeds/AggregatorV3Interface.sol";
 import {ReentrancyGuard} from "solmate/src/utils/ReentrancyGuard.sol";
 
 import {OracleLib} from "./libraries/OracleLib.sol";
 import {YieldRouter} from "./libraries/YieldRouter.sol";
 import {AaveAdapter, IPool} from "./libraries/AaveAdapter.sol";
-import {
-    LiquidityAmounts
-} from "v4-periphery/src/libraries/LiquidityAmounts.sol";
+import {LiquidityAmounts} from "v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
-import {
-    TransientStateLibrary
-} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
+import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 interface IERC20Decimals {
@@ -317,7 +305,13 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // Track this pool
         allPools.push(poolId);
 
-        emit PoolInitialized(poolId, priceFeed, priceFeedInverted, aToken0, aToken1);
+        emit PoolInitialized(
+            poolId,
+            priceFeed,
+            priceFeedInverted,
+            aToken0,
+            aToken1
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -575,8 +569,12 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         PoolId poolId
     ) internal view returns (uint256 totalIdle0, uint256 totalIdle1) {
         PoolState storage state = poolStates[poolId];
-        totalIdle0 = state.idle0 + _getPoolATokenClaim(state.aToken0, state.aave0);
-        totalIdle1 = state.idle1 + _getPoolATokenClaim(state.aToken1, state.aave1);
+        totalIdle0 =
+            state.idle0 +
+            _getPoolATokenClaim(state.aToken0, state.aave0);
+        totalIdle1 =
+            state.idle1 +
+            _getPoolATokenClaim(state.aToken1, state.aave1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -683,7 +681,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint256 withdrawn1 = 0;
 
         if (state.aToken0 != address(0) && state.aave0 > 0) {
-            uint256 poolClaim0 = _getPoolATokenClaim(state.aToken0, state.aave0);
+            uint256 poolClaim0 = _getPoolATokenClaim(
+                state.aToken0,
+                state.aave0
+            );
             if (poolClaim0 > 0) {
                 uint256 balanceBefore0 = AaveAdapter.getAaveBalance(
                     state.aToken0,
@@ -710,7 +711,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
 
         if (state.aToken1 != address(0) && state.aave1 > 0) {
-            uint256 poolClaim1 = _getPoolATokenClaim(state.aToken1, state.aave1);
+            uint256 poolClaim1 = _getPoolATokenClaim(
+                state.aToken1,
+                state.aave1
+            );
             if (poolClaim1 > 0) {
                 uint256 balanceBefore1 = AaveAdapter.getAaveBalance(
                     state.aToken1,
@@ -756,6 +760,23 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint256 idle1Value18 = idle1Amount18;
         uint256 totalValue = idle0Value18 + idle1Value18;
 
+        // If there's not enough total value to deploy, still record the new range
+        // and skip deployment to avoid reverting.
+        if (totalValue < YieldRouter.MIN_ACTIVE_LIQUIDITY) {
+            state.activeLiquidity = 0;
+            state.activeTickLower = newLower;
+            state.activeTickUpper = newUpper;
+
+            emit LiquidityRebalanced(
+                poolId,
+                newLower,
+                newUpper,
+                0,
+                int256(state.idle0 + state.idle1)
+            );
+            return;
+        }
+
         uint256 targetIdleValue = 0;
         if (totalValue > 0) {
             (, int256 idleAmount) = YieldRouter.calculateIdealRatio(
@@ -776,8 +797,8 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint256 targetIdle0 = 0;
         uint256 targetIdle1 = 0;
         if (totalValue > 0 && targetIdleValue > 0) {
-            uint256 targetIdle0Value18 =
-                (targetIdleValue * idle0Value18) / totalValue;
+            uint256 targetIdle0Value18 = (targetIdleValue * idle0Value18) /
+                totalValue;
             uint256 targetIdle1Value18 = targetIdleValue - targetIdle0Value18;
 
             uint256 targetIdle0Amount18 = FullMath.mulDiv(
@@ -811,6 +832,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
             state.activeLiquidity = deployed;
             state.activeTickLower = newLower;
             state.activeTickUpper = newUpper;
+        } else {
+            state.activeLiquidity = 0;
+            state.activeTickLower = newLower;
+            state.activeTickUpper = newUpper;
 
             if (spent0 > state.idle0) spent0 = state.idle0;
             if (spent1 > state.idle1) spent1 = state.idle1;
@@ -820,15 +845,27 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
         // 4. Deposit remaining idle balances to Aave (Both assets)
         if (
-            state.aToken0 != address(0) && state.idle0 > YieldRouter.MIN_YIELD_DEPOSIT
+            state.aToken0 != address(0) &&
+            state.idle0 > YieldRouter.MIN_YIELD_DEPOSIT
         ) {
-            _distributeIdleToAave(poolId, state.currency0, state.aToken0, state.idle0);
+            _distributeIdleToAave(
+                poolId,
+                state.currency0,
+                state.aToken0,
+                state.idle0
+            );
         }
 
         if (
-            state.aToken1 != address(0) && state.idle1 > YieldRouter.MIN_YIELD_DEPOSIT
+            state.aToken1 != address(0) &&
+            state.idle1 > YieldRouter.MIN_YIELD_DEPOSIT
         ) {
-            _distributeIdleToAave(poolId, state.currency1, state.aToken1, state.idle1);
+            _distributeIdleToAave(
+                poolId,
+                state.currency1,
+                state.aToken1,
+                state.idle1
+            );
         }
 
         emit LiquidityRebalanced(
@@ -859,9 +896,15 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         if (currency == state.currency0) {
             if (amount > state.idle0) amount = state.idle0;
             if (amount == 0) return;
-            uint256 beforeBal = AaveAdapter.getAaveBalance(aToken, address(this));
+            uint256 beforeBal = AaveAdapter.getAaveBalance(
+                aToken,
+                address(this)
+            );
             AaveAdapter.depositToAave(aavePool, asset, amount, address(this));
-            uint256 afterBal = AaveAdapter.getAaveBalance(aToken, address(this));
+            uint256 afterBal = AaveAdapter.getAaveBalance(
+                aToken,
+                address(this)
+            );
             uint256 minted = afterBal - beforeBal;
             state.idle0 -= amount;
             state.aave0 += minted;
@@ -869,9 +912,15 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         } else if (currency == state.currency1) {
             if (amount > state.idle1) amount = state.idle1;
             if (amount == 0) return;
-            uint256 beforeBal = AaveAdapter.getAaveBalance(aToken, address(this));
+            uint256 beforeBal = AaveAdapter.getAaveBalance(
+                aToken,
+                address(this)
+            );
             AaveAdapter.depositToAave(aavePool, asset, amount, address(this));
-            uint256 afterBal = AaveAdapter.getAaveBalance(aToken, address(this));
+            uint256 afterBal = AaveAdapter.getAaveBalance(
+                aToken,
+                address(this)
+            );
             uint256 minted = afterBal - beforeBal;
             state.idle1 -= amount;
             state.aave1 += minted;
@@ -897,8 +946,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
 
         totalLiquidityUnits = uint256(state.activeLiquidity);
 
-        uint256 idle0 = state.idle0 + _getPoolATokenClaim(state.aToken0, state.aave0);
-        uint256 idle1 = state.idle1 + _getPoolATokenClaim(state.aToken1, state.aave1);
+        uint256 idle0 = state.idle0 +
+            _getPoolATokenClaim(state.aToken0, state.aave0);
+        uint256 idle1 = state.idle1 +
+            _getPoolATokenClaim(state.aToken1, state.aave1);
 
         uint160 sqrtRatioAX96 = TickMath.getSqrtPriceAtTick(
             state.activeTickLower
@@ -955,7 +1006,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         int24 tickUpper,
         uint256 amount0,
         uint256 amount1
-    ) internal returns (uint128 liquidityMinted, uint256 spent0, uint256 spent1) {
+    )
+        internal
+        returns (uint128 liquidityMinted, uint256 spent0, uint256 spent1)
+    {
         (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(
             poolManager,
             poolId
@@ -1032,7 +1086,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // Check Token0
         if (state.idle0 < required0 && state.aToken0 != address(0)) {
             uint256 missing0 = required0 - state.idle0;
-            uint256 poolClaim0 = _getPoolATokenClaim(state.aToken0, state.aave0);
+            uint256 poolClaim0 = _getPoolATokenClaim(
+                state.aToken0,
+                state.aave0
+            );
             uint256 withdraw0 = missing0 > poolClaim0 ? poolClaim0 : missing0;
             if (withdraw0 > 0) {
                 uint256 balanceBefore0 = AaveAdapter.getAaveBalance(
@@ -1062,7 +1119,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         // Check Token1
         if (state.idle1 < required1 && state.aToken1 != address(0)) {
             uint256 missing1 = required1 - state.idle1;
-            uint256 poolClaim1 = _getPoolATokenClaim(state.aToken1, state.aave1);
+            uint256 poolClaim1 = _getPoolATokenClaim(
+                state.aToken1,
+                state.aave1
+            );
             uint256 withdraw1 = missing1 > poolClaim1 ? poolClaim1 : missing1;
             if (withdraw1 > 0) {
                 uint256 balanceBefore1 = AaveAdapter.getAaveBalance(
@@ -1099,12 +1159,17 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
             (bool success, ) = to.call{value: amount}("");
             require(success, "Transfer failed");
         } else {
-            bool success = IERC20(Currency.unwrap(currency)).transfer(to, amount);
+            bool success = IERC20(Currency.unwrap(currency)).transfer(
+                to,
+                amount
+            );
             require(success, "Transfer failed");
         }
     }
 
-    function _getCurrencyDecimals(Currency currency) internal view returns (uint8) {
+    function _getCurrencyDecimals(
+        Currency currency
+    ) internal view returns (uint8) {
         address token = Currency.unwrap(currency);
         if (token == address(0)) return 18;
 
@@ -1124,7 +1189,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
     }
 
-    function _to18Decimals(uint256 amount, uint8 decimals) internal pure returns (uint256) {
+    function _to18Decimals(
+        uint256 amount,
+        uint8 decimals
+    ) internal pure returns (uint256) {
         if (decimals == 18) return amount;
         if (decimals < 18) {
             return amount * _pow10(18 - decimals);
@@ -1132,7 +1200,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         return amount / _pow10(decimals - 18);
     }
 
-    function _from18Decimals(uint256 amount, uint8 decimals) internal pure returns (uint256) {
+    function _from18Decimals(
+        uint256 amount,
+        uint8 decimals
+    ) internal pure returns (uint256) {
         if (decimals == 18) return amount;
         if (decimals < 18) {
             return amount / _pow10(18 - decimals);
@@ -1147,7 +1218,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         if (aToken == address(0) || poolShares == 0) return 0;
         uint256 totalShares = aTokenTotalShares[aToken];
         if (totalShares == 0) return 0;
-        uint256 currentBalance = AaveAdapter.getAaveBalance(aToken, address(this));
+        uint256 currentBalance = AaveAdapter.getAaveBalance(
+            aToken,
+            address(this)
+        );
         if (currentBalance == 0) return 0;
 
         claim = FullMath.mulDiv(currentBalance, poolShares, totalShares);
@@ -1325,7 +1399,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         uint256 totalWithdrawn = 0;
 
         if (state.aToken0 != address(0) && state.aave0 > 0) {
-            uint256 poolClaim0 = _getPoolATokenClaim(state.aToken0, state.aave0);
+            uint256 poolClaim0 = _getPoolATokenClaim(
+                state.aToken0,
+                state.aave0
+            );
             if (poolClaim0 > 0) {
                 uint256 balanceBefore0 = AaveAdapter.getAaveBalance(
                     state.aToken0,
@@ -1355,7 +1432,10 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         }
 
         if (state.aToken1 != address(0) && state.aave1 > 0) {
-            uint256 poolClaim1 = _getPoolATokenClaim(state.aToken1, state.aave1);
+            uint256 poolClaim1 = _getPoolATokenClaim(
+                state.aToken1,
+                state.aave1
+            );
             if (poolClaim1 > 0) {
                 uint256 balanceBefore1 = AaveAdapter.getAaveBalance(
                     state.aToken1,

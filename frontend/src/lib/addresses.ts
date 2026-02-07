@@ -7,22 +7,22 @@ export const NETWORK_NAME = "Sepolia Testnet"
 
 // ─── Core Protocol ──────────────────────────────────────────
 export const POOL_MANAGER_ADDRESS = "0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A" as const
-export const SENTINEL_HOOK_ADDRESS = "0x386bc633421dD0416E357ae1c34177568dA52080" as const
-export const SWAP_HELPER_ADDRESS = "0x8B6e80F6b28b07b16E532A647d00c64bDb6c29d8" as const
-export const MOCK_AAVE_ADDRESS = "0x5e541e338E73BCdAD9cD4F61cd6DD4e6434B214e" as const
-export const BTC_ETH_ORACLE_ADDRESS = "0xc596b108197aEF64c6d349DcA8515dFFe4615502" as const
-export const SENTINEL_AUTOMATION_ADDRESS = "0xa0ce362C6D2D482d7147E6a1F98706eA9Ac82Ffb" as const
+export const SENTINEL_HOOK_ADDRESS = "0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080" as const
+export const SWAP_HELPER_ADDRESS = "0xFE9047BaA04072Caf988Ee11160585952828866f" as const
+export const MOCK_AAVE_ADDRESS = "0x5D1359bC5442bA7dA9821E2FDee4d277730451D5" as const
+export const BTC_ETH_ORACLE_ADDRESS = "0x0f8C8f8D3F1D74B959a83393eaE419558277dd8d" as const
+export const SENTINEL_AUTOMATION_ADDRESS = "0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85" as const
 
 // ─── Mock Tokens ────────────────────────────────────────────
-export const METH_ADDRESS = "0xbb8Db005968AD75dc1521c61a2bAC6e7CB5C42d5" as const
-export const MUSDC_ADDRESS = "0xaA19cF38Ec024e47542e0aFfb029784486317d3A" as const
-export const MWBTC_ADDRESS = "0xb75fDB4A4b685429447B54972e089e1c9b239fCF" as const
-export const MUSDT_ADDRESS = "0x19180e57e6640f9A51dEF8c8a7137c78e75704D2" as const
+export const METH_ADDRESS = "0x728cAd9d02119FbD637279079B063A58F5DC39b8" as const
+export const MUSDC_ADDRESS = "0xc5bFb66e99EcA697a5Cb914390e02579597d45f9" as const
+export const MWBTC_ADDRESS = "0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA" as const
+export const MUSDT_ADDRESS = "0x757532BDebcf3568fDa48aD7dea78B5644D70E41" as const
 
 // ─── Pool IDs (bytes32, from deploy output) ─────────────────
-export const POOL_ID_ETH_USDC = "0xebd975263c29db205914ec03bc0bb7b43c34ab833ae24c7f521a4c0edc3eb8f5" as `0x${string}`
-export const POOL_ID_WBTC_ETH = "0xb86d98b048c5f61f5b9e8a7c7d769b0971aba0948777e349a21314e1429f9266" as `0x${string}`
-export const POOL_ID_ETH_USDT = "0x42cc361675a03875472eb6f267b516a0f88a4cafe0d7265905b761f2fbded3d6" as `0x${string}`
+export const POOL_ID_ETH_USDC = "0x90b5f49d49079bfe71c1fb9787a0381eeca7f4ccee7ba0d8de387e2fffd96d8b" as `0x${string}`
+export const POOL_ID_WBTC_ETH = "0xe422877004fdcad519eb76f4a080371ac9a9d631ba2b5d27c771d479862e1d9c" as `0x${string}`
+export const POOL_ID_ETH_USDT = "0x3d41b451e3c6abf6f5c8b1aa2aaa157dd28f55a4bb6f78c511ff6c529782bd69" as `0x${string}`
 
 // ─── Token metadata ─────────────────────────────────────────
 export const TOKENS: Record<string, { address: `0x${string}`; symbol: string; decimals: number; name: string }> = {

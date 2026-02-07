@@ -15,9 +15,13 @@ contract YieldRouterUnitTest is Test {
         return YieldRouter.calculateIdealRatio(totalBalance, newTickLower, newTickUpper, currentTick, volatility);
     }
 
-    function testCalculateIdealRatio_MinLiquidityReverts() public {
-        vm.expectRevert(YieldRouter.InsufficientLiquidity.selector);
-        this.callCalculateIdealRatio(YieldRouter.MIN_ACTIVE_LIQUIDITY - 1, -100, 100, 0, 500);
+    function testCalculateIdealRatio_MinLiquidityDoesNotRevert() public {
+        uint256 totalBalance = YieldRouter.MIN_ACTIVE_LIQUIDITY - 1;
+        (uint256 activeAmount, int256 idleAmount) =
+            this.callCalculateIdealRatio(totalBalance, -100, 100, 0, 500);
+
+        assertEq(activeAmount, totalBalance);
+        assertEq(idleAmount, 0);
     }
 
     function testCalculateIdealRatio_InvalidRangeReverts() public {

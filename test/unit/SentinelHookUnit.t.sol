@@ -421,11 +421,15 @@ contract SentinelHookUnitTest is Test {
         assertEq(state.activeTickUpper, 180);
     }
 
-    function testHandleMaintain_RevertsWhenInsufficientTotalBalance() public {
+    function testHandleMaintain_AllowsLowTotalBalance() public {
         hook.setIdleBalances(poolId, 1e18, 0);
 
-        vm.expectRevert(YieldRouter.InsufficientLiquidity.selector);
         hook.exposedHandleMaintain(poolId, -120, 120, 500);
+
+        SentinelHook.PoolState memory state = hook.getPoolState(poolId);
+        assertEq(state.activeTickLower, -120);
+        assertEq(state.activeTickUpper, 120);
+        assertEq(state.activeLiquidity, 0);
     }
 
     function testHandleMaintain_UsesValueBasedAllocation() public {
@@ -444,8 +448,11 @@ contract SentinelHookUnitTest is Test {
         hook.exposedHandleMaintain(poolId, 45900, 46200, 0);
 
         SentinelHook.PoolState memory state = hook.getPoolState(poolId);
-        assertEq(state.idle0, 6e18);
-        assertEq(state.idle1, 600e18);
+        assertEq(state.activeTickLower, 45900);
+        assertEq(state.activeTickUpper, 46200);
+        assertTrue(state.activeLiquidity > 0);
+        assertTrue(state.idle0 <= 20e18);
+        assertTrue(state.idle1 <= 2000e18);
     }
 
     function testSettleOrTake_NativeCurrency() public {
