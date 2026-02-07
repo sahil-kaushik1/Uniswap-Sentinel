@@ -37,42 +37,8 @@ import { useMaintainer, useOwner } from "@/hooks/use-sentinel"
 
 const hookAddress = SENTINEL_HOOK_ADDRESS as `0x${string}`
 
-// Static automation history (would come from event indexing in production)
-const automationHistory = [
-  {
-    id: 1,
-    pool: "ETH/USDC",
-    action: "maintain()",
-    newRange: "[-887220, 887220]",
-    volatility: "2.1%",
-    gasUsed: "342,100",
-    time: "12 min ago",
-    status: "success",
-    txHash: "0xab12...ef34",
-  },
-  {
-    id: 2,
-    pool: "ETH/USDT",
-    action: "maintain()",
-    newRange: "[-887220, 887220]",
-    volatility: "3.4%",
-    gasUsed: "298,400",
-    time: "45 min ago",
-    status: "success",
-    txHash: "0xcd56...gh78",
-  },
-  {
-    id: 3,
-    pool: "ETH/WBTC",
-    action: "maintain()",
-    newRange: "[-887220, 887220]",
-    volatility: "4.8%",
-    gasUsed: "—",
-    time: "1h ago",
-    status: "pending",
-    txHash: "—",
-  },
-]
+// Execution history will be populated from on-chain events once Chainlink Automation is active
+const automationHistory: { id: number; pool: string; action: string; newRange: string; volatility: string; gasUsed: string; time: string; status: string; txHash: string }[] = []
 
 export function AutomationPage() {
   const { address, isConnected } = useAccount()
@@ -367,10 +333,9 @@ export function AutomationPage() {
                 Recent maintain() executions across all pools
               </CardDescription>
             </div>
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-              <Clock className="h-3 w-3" />
-              View All
-            </Button>
+            <Badge variant="secondary" className="text-xs">
+              {automationHistory.length} executions
+            </Badge>
           </div>
         </CardHeader>
         <CardContent>
@@ -387,43 +352,52 @@ export function AutomationPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {automationHistory.map((entry) => (
-                <TableRow
-                  key={entry.id}
-                  className="border-border/20 hover:bg-muted/10"
-                >
-                  <TableCell className="font-medium">{entry.pool}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {entry.action}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{entry.newRange}</TableCell>
-                  <TableCell>{entry.volatility}</TableCell>
-                  <TableCell className="text-muted-foreground">{entry.gasUsed}</TableCell>
-                  <TableCell className="text-muted-foreground">{entry.time}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      {entry.status === "success" ? (
-                        <CheckCircle className="h-3.5 w-3.5 text-[oklch(0.72_0.19_155)]" />
-                      ) : entry.status === "pending" ? (
-                        <Clock className="h-3.5 w-3.5 text-[oklch(0.8_0.16_85)]" />
-                      ) : (
-                        <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                      )}
-                      <span
-                        className={`text-xs capitalize ${
-                          entry.status === "success"
-                            ? "text-[oklch(0.72_0.19_155)]"
-                            : entry.status === "pending"
-                              ? "text-[oklch(0.8_0.16_85)]"
-                              : "text-destructive"
-                        }`}
-                      >
-                        {entry.status}
-                      </span>
-                    </div>
+              {automationHistory.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <Clock className="mx-auto h-6 w-6 mb-2 opacity-40" />
+                    No maintain() executions yet. History will appear once Chainlink Automation begins rebalancing.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                automationHistory.map((entry) => (
+                  <TableRow
+                    key={entry.id}
+                    className="border-border/20 hover:bg-muted/10"
+                  >
+                    <TableCell className="font-medium">{entry.pool}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {entry.action}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{entry.newRange}</TableCell>
+                    <TableCell>{entry.volatility}</TableCell>
+                    <TableCell className="text-muted-foreground">{entry.gasUsed}</TableCell>
+                    <TableCell className="text-muted-foreground">{entry.time}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {entry.status === "success" ? (
+                          <CheckCircle className="h-3.5 w-3.5 text-[oklch(0.72_0.19_155)]" />
+                        ) : entry.status === "pending" ? (
+                          <Clock className="h-3.5 w-3.5 text-[oklch(0.8_0.16_85)]" />
+                        ) : (
+                          <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                        )}
+                        <span
+                          className={`text-xs capitalize ${
+                            entry.status === "success"
+                              ? "text-[oklch(0.72_0.19_155)]"
+                              : entry.status === "pending"
+                                ? "text-[oklch(0.8_0.16_85)]"
+                                : "text-destructive"
+                          }`}
+                        >
+                          {entry.status}
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

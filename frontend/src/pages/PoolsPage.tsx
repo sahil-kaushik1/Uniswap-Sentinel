@@ -9,51 +9,13 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { ArrowUpRight, ExternalLink, TrendingUp, Shield, Activity } from "lucide-react"
 import { useAccount } from "wagmi"
 import { formatUnits } from "viem"
-import { useAllPoolStates, useAllSharePrices } from "@/hooks/use-sentinel"
+import { useAllPoolStates, useAllSharePrices, useLPCount } from "@/hooks/use-sentinel"
 import { POOLS, SENTINEL_HOOK_ADDRESS, etherscanAddress, type PoolConfig } from "@/lib/addresses"
 import { DepositDialog } from "@/components/deposit-dialog"
 import { WithdrawDialog } from "@/components/withdraw-dialog"
-
-// Static history data per pool (no on-chain historical data)
-const histories: Record<string, { date: string; tvl: number; apr: number }[]> = {
-  "mETH / mUSDC": [
-    { date: "Mon", tvl: 78000, apr: 13.1 },
-    { date: "Tue", tvl: 80200, apr: 13.8 },
-    { date: "Wed", tvl: 79100, apr: 12.9 },
-    { date: "Thu", tvl: 82500, apr: 14.5 },
-    { date: "Fri", tvl: 83800, apr: 14.1 },
-    { date: "Sat", tvl: 85100, apr: 14.8 },
-    { date: "Sun", tvl: 84210, apr: 14.2 },
-  ],
-  "mETH / mWBTC": [
-    { date: "Mon", tvl: 39000, apr: 10.2 },
-    { date: "Tue", tvl: 40100, apr: 10.9 },
-    { date: "Wed", tvl: 38500, apr: 9.8 },
-    { date: "Thu", tvl: 41000, apr: 11.2 },
-    { date: "Fri", tvl: 42200, apr: 12.1 },
-    { date: "Sat", tvl: 41500, apr: 11.5 },
-    { date: "Sun", tvl: 41890, apr: 11.7 },
-  ],
-  "mETH / mUSDT": [
-    { date: "Mon", tvl: 25000, apr: 11.1 },
-    { date: "Tue", tvl: 26200, apr: 11.8 },
-    { date: "Wed", tvl: 27800, apr: 12.1 },
-    { date: "Thu", tvl: 28100, apr: 12.4 },
-    { date: "Fri", tvl: 29000, apr: 12.5 },
-    { date: "Sat", tvl: 29200, apr: 12.2 },
-    { date: "Sun", tvl: 29540, apr: 12.4 },
-  ],
-}
 
 interface PoolDisplayData {
   config: PoolConfig
@@ -68,7 +30,6 @@ interface PoolDisplayData {
   deviationBps: number
   sharePrice: string
   lpCount: string
-  history: { date: string; tvl: number; apr: number }[]
 }
 
 export function PoolsPage() {
@@ -115,7 +76,6 @@ export function PoolsPage() {
         deviationBps: 0,
         sharePrice: "—",
         lpCount: "0",
-        history: histories[pool.name] ?? [],
       }
     }
 
@@ -126,14 +86,14 @@ export function PoolsPage() {
     const totalValue = idle0 + idle1 + aave0 + aave1
 
     const hasActive = state.activeLiquidity > 0n
-    const activePercent = hasActive ? 60 : state.totalShares > 0n ? 0 : 50
+    const activePercent = hasActive && totalValue > 0 ? 60 : hasActive ? 100 : 0
     const tickLower = state.activeTickLower
     const tickUpper = state.activeTickUpper
 
     return {
       config: pool,
       name: pool.name,
-      tvl: totalValue > 0 ? `$${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "$0",
+      tvl: totalValue > 0 ? `$${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : state.totalShares > 0n ? "Pending Deploy" : "$0",
       active: activePercent,
       idle: 100 - activePercent,
       status: hasActive ? "In Range" : state.totalShares > 0n ? "Idle" : "Empty",
@@ -143,7 +103,6 @@ export function PoolsPage() {
       deviationBps: Number(state.maxDeviationBps),
       sharePrice: sharePrice > 0n ? formatUnits(sharePrice, 18) : "1.0",
       lpCount: "—",
-      history: histories[pool.name] ?? [],
     }
   })
 
@@ -258,52 +217,11 @@ export function PoolsPage() {
               </div>
             </div>
 
-            <Tabs defaultValue="tvl">
-              <TabsList className="bg-muted/30">
-                <TabsTrigger value="tvl">TVL History</TabsTrigger>
-                <TabsTrigger value="apr">APR History</TabsTrigger>
-              </TabsList>
-              <TabsContent value="tvl">
-                <ChartContainer
-                  config={{ tvl: { label: "TVL", color: "var(--color-chart-1)" } }}
-                  className="h-[240px] w-full"
-                >
-                  <AreaChart data={selectedPool.history}>
-                    <defs>
-                      <linearGradient id="poolTvlGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--color-chart-1)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="var(--color-chart-1)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }} />
-                    <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `$${v / 1000}k`} tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }} />
-                    <ChartTooltip content={<ChartTooltipContent formatter={(v) => `$${Number(v).toLocaleString()}`} />} />
-                    <Area type="monotone" dataKey="tvl" stroke="var(--color-chart-1)" strokeWidth={2} fill="url(#poolTvlGrad)" />
-                  </AreaChart>
-                </ChartContainer>
-              </TabsContent>
-              <TabsContent value="apr">
-                <ChartContainer
-                  config={{ apr: { label: "APR", color: "var(--color-chart-2)" } }}
-                  className="h-[240px] w-full"
-                >
-                  <AreaChart data={selectedPool.history}>
-                    <defs>
-                      <linearGradient id="poolAprGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }} />
-                    <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }} />
-                    <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${v}%`} />} />
-                    <Area type="monotone" dataKey="apr" stroke="var(--color-chart-2)" strokeWidth={2} fill="url(#poolAprGrad)" />
-                  </AreaChart>
-                </ChartContainer>
-              </TabsContent>
-            </Tabs>
+            {/* Historical charts will appear here once rebalancing data is available */}
+            <div className="rounded-lg border border-dashed border-border/40 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
+              <Activity className="mx-auto h-8 w-8 mb-2 opacity-40" />
+              <p>TVL &amp; APR history will populate after Chainlink Automation begins rebalancing cycles.</p>
+            </div>
 
             {/* Pool Config */}
             <div className="grid grid-cols-3 gap-4">

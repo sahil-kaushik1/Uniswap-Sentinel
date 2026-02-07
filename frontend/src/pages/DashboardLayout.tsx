@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Link } from "react-router-dom"
 import { ArrowLeft } from "lucide-react"
 import { ConnectButton } from "@/components/connect-button"
+import { NetworkGuard } from "@/components/network-guard"
 
 export function DashboardLayout() {
   return (
@@ -29,7 +30,9 @@ export function DashboardLayout() {
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+          <NetworkGuard>
+            <Outlet />
+          </NetworkGuard>
         </main>
       </SidebarInset>
     </SidebarProvider>

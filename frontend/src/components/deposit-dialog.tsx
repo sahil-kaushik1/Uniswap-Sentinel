@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { parseUnits } from "viem"
+import { useQueryClient } from "@tanstack/react-query"
 import { sentinelHookAbi, erc20Abi } from "@/lib/abi"
 import { SENTINEL_HOOK_ADDRESS, TOKENS, type PoolConfig } from "@/lib/addresses"
 import { useTokenBalance, useTokenAllowance } from "@/hooks/use-tokens"
@@ -15,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Check, ArrowRight } from "lucide-react"
+import { Loader2, Check, ArrowRight, AlertCircle } from "lucide-react"
 
 const hookAddress = SENTINEL_HOOK_ADDRESS as `0x${string}`
 
@@ -27,6 +28,7 @@ interface DepositDialogProps {
 
 export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) {
   const { address } = useAccount()
+  const queryClient = useQueryClient()
   const [amount0, setAmount0] = useState("")
   const [amount1, setAmount1] = useState("")
   const [step, setStep] = useState<"input" | "approve0" | "approve1" | "deposit" | "done">("input")
@@ -48,15 +50,15 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
   const needsApproval1 = parsedAmount1 > 0n && (allowance1 ?? 0n) < parsedAmount1
 
   // Approve token0
-  const { writeContract: approve0, data: approve0Hash, isPending: isApproving0 } = useWriteContract()
+  const { writeContract: approve0, data: approve0Hash, isPending: isApproving0, error: approve0Error } = useWriteContract()
   const { isSuccess: approve0Confirmed } = useWaitForTransactionReceipt({ hash: approve0Hash })
 
   // Approve token1
-  const { writeContract: approve1, data: approve1Hash, isPending: isApproving1 } = useWriteContract()
+  const { writeContract: approve1, data: approve1Hash, isPending: isApproving1, error: approve1Error } = useWriteContract()
   const { isSuccess: approve1Confirmed } = useWaitForTransactionReceipt({ hash: approve1Hash })
 
   // Deposit
-  const { writeContract: deposit, data: depositHash, isPending: isDepositing } = useWriteContract()
+  const { writeContract: deposit, data: depositHash, isPending: isDepositing, error: depositError } = useWriteContract()
   const { isSuccess: depositConfirmed } = useWaitForTransactionReceipt({ hash: depositHash })
 
   // Step progression
@@ -76,9 +78,12 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
 
   useEffect(() => {
     if (depositConfirmed && step === "deposit") {
+      queryClient.invalidateQueries()
       setStep("done")
     }
-  }, [depositConfirmed, step])
+  }, [depositConfirmed, step, queryClient])
+
+  const txError = approve0Error || approve1Error || depositError
 
   const handleStart = () => {
     if (needsApproval0) {
@@ -255,6 +260,14 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
                 </Button>
               </div>
             </div>
+
+            {/* Error display */}
+            {txError && (
+              <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive">{(txError as Error).message?.slice(0, 200) || "Transaction failed"}</p>
+              </div>
+            )}
 
             {/* Step indicator */}
             {step !== "input" && (

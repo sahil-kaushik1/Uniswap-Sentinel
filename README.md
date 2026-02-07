@@ -143,7 +143,8 @@ sentinel-protocol/
 ├── script/                        # Deployment Scripts
 │   ├── DeployFullDemo.s.sol      # Full Sepolia deploy (tokens, Aave, hook, pools)
 │   ├── DeploySentinel.s.sol      # Production-style deploy
-│   ├── DeploySentinelAutomation.s.sol # Automation contract deploy
+│   ├── DeployAutomationFull.s.sol # All-in-one automation deploy + pool registration
+│   ├── DeploySentinelAutomation.s.sol # Automation contract deploy (standalone)
 │   └── DeployMockEnvironment.s.sol
 │
 ├── frontend/                      # React Frontend (Vite + wagmi + shadcn/ui)
@@ -221,25 +222,83 @@ Optional env var for hook deployment:
 ### Automation (Chainlink Functions)
 
 ```bash
-# Deploy SentinelAutomation (Chainlink Functions + Automation)
-forge script script/DeploySentinelAutomation.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
-
-# Register a pool (repeat per pool)
-forge script script/DeploySentinelAutomation.s.sol:RegisterPools --rpc-url $SEPOLIA_RPC_URL --broadcast
-
-# Set hook maintainer to the automation contract
-forge script script/DeploySentinelAutomation.s.sol:SetMaintainer --rpc-url $SEPOLIA_RPC_URL --broadcast
+# Deploy SentinelAutomation + register pools + set maintainer (all-in-one)
+forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
 ```
 
-Required env vars for automation:
+Required env vars for automation (in `.env`):
 
-- `PRIVATE_KEY`
-- `SENTINEL_HOOK_ADDRESS`
-- `CL_FUNCTIONS_ROUTER`
-- `CL_DON_ID`
-- `CL_SUB_ID`
-- `CL_GAS_LIMIT`
-- `CL_FUNCTIONS_SOURCE` (optional)
+- `SEPOLIA_RPC_URL` — Alchemy/Infura Sepolia endpoint
+- `SENTINEL_HOOK_ADDRESS` — Deployed SentinelHook address
+- `CL_FUNCTIONS_ROUTER` — `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` (Sepolia)
+- `CL_DON_ID` — `fun-ethereum-sepolia-1`
+- `CL_SUB_ID` — Chainlink Functions subscription ID
+- `CL_GAS_LIMIT` — e.g. `300000`
+- `CL_FUNCTIONS_SOURCE` (optional — reads from `src/automation/functions/rebalancer.js`)
+
+Post-deploy Chainlink UI steps:
+1. **Register Automation Upkeep** at [automation.chain.link](https://automation.chain.link/) → Custom Logic → paste SentinelAutomation address → fund with LINK
+2. **Add Consumer** at [functions.chain.link](https://functions.chain.link/) → your subscription → Add Consumer → paste SentinelAutomation address
+
+---
+
+## 🌐 Deployed Contracts (Sepolia Testnet)
+
+All contracts are **deployed and verified** on Sepolia. View on [Etherscan](https://sepolia.etherscan.io).
+
+### Core Contracts
+
+| Contract | Address | Status |
+|----------|---------|--------|
+| **Uniswap PoolManager** | [`0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A`](https://sepolia.etherscan.io/address/0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A) | Canonical |
+| **SentinelHook** | [`0x386bc633421dD0416E357ae1c34177568dA52080`](https://sepolia.etherscan.io/address/0x386bc633421dD0416E357ae1c34177568dA52080#code) | ✅ Verified |
+| **SwapHelper** | [`0x8B6e80F6b28b07b16E532A647d00c64bDb6c29d8`](https://sepolia.etherscan.io/address/0x8B6e80F6b28b07b16E532A647d00c64bDb6c29d8#code) | ✅ Verified |
+| **SentinelAutomation** | [`0xa0ce362C6D2D482d7147E6a1F98706eA9Ac82Ffb`](https://sepolia.etherscan.io/address/0xa0ce362C6D2D482d7147E6a1F98706eA9Ac82Ffb#code) | ✅ Verified |
+| **MockAave** | [`0x5e541e338E73BCdAD9cD4F61cd6DD4e6434B214e`](https://sepolia.etherscan.io/address/0x5e541e338E73BCdAD9cD4F61cd6DD4e6434B214e) | Deployed |
+
+### Mock Tokens
+
+| Token | Address |
+|-------|--------|
+| **mETH** (Mock WETH) | [`0xbb8Db005968AD75dc1521c61a2bAC6e7CB5C42d5`](https://sepolia.etherscan.io/address/0xbb8Db005968AD75dc1521c61a2bAC6e7CB5C42d5) |
+| **mUSDC** | [`0xaA19cF38Ec024e47542e0aFfb029784486317d3A`](https://sepolia.etherscan.io/address/0xaA19cF38Ec024e47542e0aFfb029784486317d3A) |
+| **mWBTC** | [`0xb75fDB4A4b685429447B54972e089e1c9b239fCF`](https://sepolia.etherscan.io/address/0xb75fDB4A4b685429447B54972e089e1c9b239fCF) |
+| **mUSDT** | [`0x19180e57e6640f9A51dEF8c8a7137c78e75704D2`](https://sepolia.etherscan.io/address/0x19180e57e6640f9A51dEF8c8a7137c78e75704D2) |
+
+### Aave aTokens (Mock)
+
+| aToken | Address | Underlying |
+|--------|---------|------------|
+| **maETH** | `0xE7F85Ee92dd51bbAB76700DF0198C366c2F9D07B` | mETH |
+| **maUSDC** | `0x2b9a68fa35bb2F6f88E90FB68265315B9dc8fb03` | mUSDC |
+| **maWBTC** | `0x049Ad2fc1b7d105C6c7502Cd1E1EF8af74c59139` | mWBTC |
+| **maUSDT** | `0x4197Aa46167911C3Ed87d023C0B704e597be8989` | mUSDT |
+
+### Deployed Pools (3 Active)
+
+| Pool | Pool ID | Oracle |
+|------|---------|--------|
+| **mUSDC/mETH** | `0xebd975...eb8f5` | ETH/USD |
+| **mWBTC/mETH** | `0xb86d98...9266` | BTC/ETH (Ratio) |
+| **mUSDT/mETH** | `0x42cc36...d3d6` | ETH/USD |
+
+### Chainlink Integration
+
+| Component | Details |
+|-----------|--------|
+| **Automation Upkeep** | "hackmoney-1" — Active, 5 LINK funded, gas limit 500,000 |
+| **Functions Subscription** | #6244 — 7 LINK funded, consumer added |
+| **DON ID** | `fun-ethereum-sepolia-1` |
+| **Functions Router** | `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` |
+
+### Chainlink Oracles (Real Sepolia Feeds)
+
+| Feed | Address |
+|------|---------|
+| ETH/USD | `0x694AA1769357215DE4FAC081bf1f309aDC325306` |
+| BTC/USD | `0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43` |
+| USDC/USD | `0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E` |
+| BTC/ETH (Ratio) | `0xc596b108197aEF64c6d349DcA8515dFFe4615502` |
 
 ---
 

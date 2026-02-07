@@ -7,6 +7,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {SentinelHook} from "../src/SentinelHook.sol";
 import {SwapHelper} from "../src/SwapHelper.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -164,6 +165,10 @@ contract DeployFullDemo is Script {
                 hooks: IHooks(address(hook))
             });
 
+            // Initialize pool in Uniswap v4 PoolManager first
+            uint160 sqrtPriceX96_1 = TickMath.getSqrtPriceAtTick(0); // 1:1 starting price
+            IPoolManager(POOL_MANAGER).initialize(key1, sqrtPriceX96_1);
+
             hook.initializePool(
                 key1,
                 ETH_USD_FEED,
@@ -193,6 +198,10 @@ contract DeployFullDemo is Script {
                 hooks: IHooks(address(hook))
             });
 
+            // Initialize pool in Uniswap v4 PoolManager first
+            uint160 sqrtPriceX96_2 = TickMath.getSqrtPriceAtTick(0);
+            IPoolManager(POOL_MANAGER).initialize(key2, sqrtPriceX96_2);
+
             hook.initializePool(
                 key2,
                 address(btcEthOracle),
@@ -221,6 +230,10 @@ contract DeployFullDemo is Script {
                 tickSpacing: 60,
                 hooks: IHooks(address(hook))
             });
+
+            // Initialize pool in Uniswap v4 PoolManager first
+            uint160 sqrtPriceX96_3 = TickMath.getSqrtPriceAtTick(0);
+            IPoolManager(POOL_MANAGER).initialize(key3, sqrtPriceX96_3);
 
             hook.initializePool(
                 key3,
@@ -254,6 +267,37 @@ contract DeployFullDemo is Script {
         mUSDT.approve(POOL_MANAGER, type(uint256).max);
 
         console.log("All approvals set");
+
+        // ─── 9. Seed Pools with Initial Liquidity ─────────────
+
+        console.log("\n--- 9. Seeding Pools with Initial Liquidity ---");
+
+        // Pool 1: 10 mETH + 25,000 mUSDC (sort-aware)
+        {
+            (Currency c0, ) = _sort(address(mETH), address(mUSDC));
+            uint256 a0 = Currency.unwrap(c0) == address(mETH) ? 10 ether : 25_000e6;
+            uint256 a1 = Currency.unwrap(c0) == address(mETH) ? 25_000e6 : 10 ether;
+            uint256 dep1Shares = hook.depositLiquidity(key1, a0, a1);
+            console.log("Pool 1 seeded, shares:", dep1Shares);
+        }
+
+        // Pool 2: 10 mETH + 1 mWBTC (token order depends on sort)
+        {
+            (Currency t0, ) = _sort(address(mWBTC), address(mETH));
+            uint256 amt0 = Currency.unwrap(t0) == address(mETH) ? 10 ether : 1e8;
+            uint256 amt1 = Currency.unwrap(t0) == address(mETH) ? 1e8 : 10 ether;
+            uint256 dep2Shares = hook.depositLiquidity(key2, amt0, amt1);
+            console.log("Pool 2 seeded, shares:", dep2Shares);
+        }
+
+        // Pool 3: 10 mETH + 25,000 mUSDT (sort-aware)
+        {
+            (Currency c0, ) = _sort(address(mETH), address(mUSDT));
+            uint256 a0 = Currency.unwrap(c0) == address(mETH) ? 10 ether : 25_000e6;
+            uint256 a1 = Currency.unwrap(c0) == address(mETH) ? 25_000e6 : 10 ether;
+            uint256 dep3Shares = hook.depositLiquidity(key3, a0, a1);
+            console.log("Pool 3 seeded, shares:", dep3Shares);
+        }
 
         vm.stopBroadcast();
 

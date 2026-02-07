@@ -66,7 +66,7 @@ export function PositionsPage() {
       sharePrice: sharePrice > 0n ? Number(formatUnits(sharePrice, 18)).toFixed(4) : "1.0",
       status: !isInit ? "Not Deployed" : hasActive ? "In Range" : state!.totalShares > 0n ? "Idle" : "Empty",
       statusColor: !isInit ? "oklch(0.6 0.05 250)" : hasActive ? "oklch(0.72 0.19 155)" : "oklch(0.8 0.16 85)",
-      active: hasActive ? 60 : 0,
+      active: hasActive && state!.totalShares > 0n ? 60 : hasActive ? 100 : 0,
       hasPosition: shares > 0n,
     }
   })
@@ -135,8 +135,8 @@ export function PositionsPage() {
                 <PiggyBank className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">~14.7%</div>
-                <p className="mt-1 text-xs text-muted-foreground">Estimated yield</p>
+                <div className="text-2xl font-bold">—</div>
+                <p className="mt-1 text-xs text-muted-foreground">Post-rebalance</p>
               </CardContent>
             </Card>
             <Card className="border-border/30 bg-card/80">

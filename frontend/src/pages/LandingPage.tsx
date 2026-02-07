@@ -202,7 +202,7 @@ export function LandingPage() {
             <Card className="glow-violet border-border/50">
               <CardHeader>
                 <Badge variant="secondary" className="mb-2 w-fit text-xs">
-                  Live strategy snapshot
+                  Example strategy snapshot
                 </Badge>
                 <CardTitle className="text-xl">Sentinel Range Controller</CardTitle>
                 <CardDescription>

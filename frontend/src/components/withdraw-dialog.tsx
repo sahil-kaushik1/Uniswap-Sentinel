@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { parseUnits, formatUnits } from "viem"
+import { useQueryClient } from "@tanstack/react-query"
 import { sentinelHookAbi } from "@/lib/abi"
 import { SENTINEL_HOOK_ADDRESS, TOKENS, type PoolConfig } from "@/lib/addresses"
 import { useLPPosition } from "@/hooks/use-sentinel"
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Loader2, Check } from "lucide-react"
+import { Loader2, Check, AlertCircle } from "lucide-react"
 
 const hookAddress = SENTINEL_HOOK_ADDRESS as `0x${string}`
 
@@ -26,6 +27,7 @@ interface WithdrawDialogProps {
 
 export function WithdrawDialog({ pool, open, onOpenChange }: WithdrawDialogProps) {
   const { address } = useAccount()
+  const queryClient = useQueryClient()
   const [sharesInput, setSharesInput] = useState("")
   const [step, setStep] = useState<"input" | "withdrawing" | "done">("input")
 
@@ -39,14 +41,15 @@ export function WithdrawDialog({ pool, open, onOpenChange }: WithdrawDialogProps
 
   const parsedShares = sharesInput ? parseUnits(sharesInput, 18) : 0n
 
-  const { writeContract: withdraw, data: withdrawHash, isPending: isWithdrawing } = useWriteContract()
+  const { writeContract: withdraw, data: withdrawHash, isPending: isWithdrawing, error: withdrawError } = useWriteContract()
   const { isSuccess: withdrawConfirmed } = useWaitForTransactionReceipt({ hash: withdrawHash })
 
   useEffect(() => {
     if (withdrawConfirmed && step === "withdrawing") {
+      queryClient.invalidateQueries()
       setStep("done")
     }
-  }, [withdrawConfirmed, step])
+  }, [withdrawConfirmed, step, queryClient])
 
   const handleWithdraw = () => {
     setStep("withdrawing")
@@ -128,6 +131,13 @@ export function WithdrawDialog({ pool, open, onOpenChange }: WithdrawDialogProps
                 </Button>
               </div>
             </div>
+
+            {withdrawError && (
+              <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive">{(withdrawError as Error).message?.slice(0, 200) || "Transaction failed"}</p>
+              </div>
+            )}
 
             <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">

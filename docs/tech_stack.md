@@ -285,18 +285,43 @@ struct PoolState {
 
 ## Network Deployments
 
-### Sepolia Testnet (Deployed)
+### Sepolia Testnet (Live Deployment)
 
-| Contract | Address | Role |
-|----------|---------|------|
-| **Uniswap PoolManager** | `0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A` | Pool management |
-| **SentinelHook** | `0x71523F89015834aD8d944c5Fff931B95153d2080` | Multi-pool hook |
-| **SwapHelper** | `0xA5472F88cCe1223a9Ba4fa4Cd2148e5197691De5` | Swap test utility |
-| **MockAave** | `0x9004CF69C23171a398ba32251c6a7de217bEdE94` | Mock Aave v3 pool |
-| **mETH** | `0x0a4a15e7bA513d672a9cAe6a7110b745b8483bC0` | Mock WETH |
-| **mUSDC** | `0x736478314ae3D3E0CbdDBA048D27ce87Ef65C7B9` | Mock USDC |
-| **mWBTC** | `0xC7490BF0f590ac0FB6A52EC80092238F724Ef865` | Mock WBTC |
-| **mUSDT** | `0xa7988c8Ba1c15DF0c93Ee873f3d8fe862a381E4F` | Mock USDT |
+#### Core Contracts
+
+| Contract | Address | Etherscan |
+|----------|---------|----------|
+| **Uniswap PoolManager** | `0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A` | [View](https://sepolia.etherscan.io/address/0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A) |
+| **SentinelHook** | `0x386bc633421dD0416E357ae1c34177568dA52080` | [Verified ✅](https://sepolia.etherscan.io/address/0x386bc633421dD0416E357ae1c34177568dA52080#code) |
+| **SwapHelper** | `0x8B6e80F6b28b07b16E532A647d00c64bDb6c29d8` | [Verified ✅](https://sepolia.etherscan.io/address/0x8B6e80F6b28b07b16E532A647d00c64bDb6c29d8#code) |
+| **SentinelAutomation** | `0xa0ce362C6D2D482d7147E6a1F98706eA9Ac82Ffb` | [Verified ✅](https://sepolia.etherscan.io/address/0xa0ce362C6D2D482d7147E6a1F98706eA9Ac82Ffb#code) |
+| **MockAave** | `0x5e541e338E73BCdAD9cD4F61cd6DD4e6434B214e` | [View](https://sepolia.etherscan.io/address/0x5e541e338E73BCdAD9cD4F61cd6DD4e6434B214e) |
+
+#### Mock Tokens
+
+| Token | Address | Etherscan |
+|-------|---------|----------|
+| **mETH** | `0xbb8Db005968AD75dc1521c61a2bAC6e7CB5C42d5` | [View](https://sepolia.etherscan.io/address/0xbb8Db005968AD75dc1521c61a2bAC6e7CB5C42d5) |
+| **mUSDC** | `0xaA19cF38Ec024e47542e0aFfb029784486317d3A` | [View](https://sepolia.etherscan.io/address/0xaA19cF38Ec024e47542e0aFfb029784486317d3A) |
+| **mWBTC** | `0xb75fDB4A4b685429447B54972e089e1c9b239fCF` | [View](https://sepolia.etherscan.io/address/0xb75fDB4A4b685429447B54972e089e1c9b239fCF) |
+| **mUSDT** | `0x19180e57e6640f9A51dEF8c8a7137c78e75704D2` | [View](https://sepolia.etherscan.io/address/0x19180e57e6640f9A51dEF8c8a7137c78e75704D2) |
+
+#### Aave aTokens (Mock)
+
+| aToken | Address | Underlying |
+|--------|---------|------------|
+| **maETH** | `0xE7F85Ee92dd51bbAB76700DF0198C366c2F9D07B` | mETH |
+| **maUSDC** | `0x2b9a68fa35bb2F6f88E90FB68265315B9dc8fb03` | mUSDC |
+| **maWBTC** | `0x049Ad2fc1b7d105C6c7502Cd1E1EF8af74c59139` | mWBTC |
+| **maUSDT** | `0x4197Aa46167911C3Ed87d023C0B704e597be8989` | mUSDT |
+
+#### Deployed Pools
+
+| Pool | Pool ID |
+|------|--------|
+| **mUSDC/mETH** | `0xebd975263c29db205914ec03bc0bb7b43c34ab833ae24c7f521a4c0edc3eb8f5` |
+| **mWBTC/mETH** | `0xb86d98b048c5f61f5b9e8a7c7d769b0971aba0948777e349a21314e1429f9266` |
+| **mUSDT/mETH** | `0x42cc361675a03875472eb6f267b516a0f88a4cafe0d7265905b761f2fbded3d6` |
 
 ### Chainlink Oracles (Sepolia — Real Feeds)
 
@@ -305,7 +330,16 @@ struct PoolState {
 | ETH/USD | `0x694AA1769357215DE4FAC081bf1f309aDC325306` | ETH pairs circuit breaker |
 | BTC/USD | `0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43` | BTC pairs circuit breaker |
 | USDC/USD | `0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E` | Stablecoin validation |
-| BTC/ETH (Ratio) | `0x8F0deDCd80393CA544ee6C6c8A43eeB6C1657864` | WBTC/ETH pool (derived) |
+| BTC/ETH (Ratio) | `0xc596b108197aEF64c6d349DcA8515dFFe4615502` | WBTC/ETH pool (derived ratio oracle) |
+
+### Chainlink Automation & Functions
+
+| Component | Details |
+|-----------|--------|
+| **Automation Upkeep** | "hackmoney-1" — Active, 5 LINK funded, gas limit 500,000 |
+| **Functions Subscription** | #6244 — 7 LINK funded |
+| **DON ID** | `fun-ethereum-sepolia-1` |
+| **Functions Router** | `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` |
 
 ---
 
