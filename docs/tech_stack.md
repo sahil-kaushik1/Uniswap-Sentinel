@@ -292,36 +292,36 @@ struct PoolState {
 | Contract | Address | Etherscan |
 |----------|---------|----------|
 | **Uniswap PoolManager** | `0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A` | [View](https://sepolia.etherscan.io/address/0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A) |
-| **SentinelHook** | `0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080` | [Verified ✅](https://sepolia.etherscan.io/address/0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080#code) |
-| **SwapHelper** | `0xFE9047BaA04072Caf988Ee11160585952828866f` | [Verified ✅](https://sepolia.etherscan.io/address/0xFE9047BaA04072Caf988Ee11160585952828866f#code) |
-| **SentinelAutomation** | `0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85` | [Verified ✅](https://sepolia.etherscan.io/address/0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85#code) |
-| **MockAave** | `0x5D1359bC5442bA7dA9821E2FDee4d277730451D5` | [View](https://sepolia.etherscan.io/address/0x5D1359bC5442bA7dA9821E2FDee4d277730451D5) |
+| **SentinelHook** | `0xC4C486Ab67d6e1bceA5DF14eBE2393EEBa0a6080` | [Verified ✅](https://sepolia.etherscan.io/address/0xC4C486Ab67d6e1bceA5DF14eBE2393EEBa0a6080#code) |
+| **SwapHelper** | `0x176F75Dc4B71FB1f3808A789Fd36a94aE343836f` | [Verified ✅](https://sepolia.etherscan.io/address/0x176F75Dc4B71FB1f3808A789Fd36a94aE343836f#code) |
+| **SentinelAutomation** | Deployed via DeployAutomationFull | — |
+| **MockAave** | `0xDDfDfD8b5313BcB7B2c60a604AC777F806747D31` | [View](https://sepolia.etherscan.io/address/0xDDfDfD8b5313BcB7B2c60a604AC777F806747D31) |
 
 #### Mock Tokens
 
 | Token | Address | Etherscan |
 |-------|---------|----------|
-| **mETH** | `0x728cAd9d02119FbD637279079B063A58F5DC39b8` | [View](https://sepolia.etherscan.io/address/0x728cAd9d02119FbD637279079B063A58F5DC39b8) |
-| **mUSDC** | `0xc5bFb66e99EcA697a5Cb914390e02579597d45f9` | [View](https://sepolia.etherscan.io/address/0xc5bFb66e99EcA697a5Cb914390e02579597d45f9) |
-| **mWBTC** | `0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA` | [View](https://sepolia.etherscan.io/address/0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA) |
-| **mUSDT** | `0x757532BDebcf3568fDa48aD7dea78B5644D70E41` | [View](https://sepolia.etherscan.io/address/0x757532BDebcf3568fDa48aD7dea78B5644D70E41) |
+| **mETH** | `0x7f2F5eC740c31012eC5b9a0c6fC03805A3250baE` | [View](https://sepolia.etherscan.io/address/0x7f2F5eC740c31012eC5b9a0c6fC03805A3250baE) |
+| **mUSDC** | `0xF8753428B6071Bf98e4cE6340EC1dD2b70d80737` | [View](https://sepolia.etherscan.io/address/0xF8753428B6071Bf98e4cE6340EC1dD2b70d80737) |
+| **mWBTC** | `0xD67a91a2f99e9D4C66d6E1497A5659e2d336E2e3` | [View](https://sepolia.etherscan.io/address/0xD67a91a2f99e9D4C66d6E1497A5659e2d336E2e3) |
+| **mUSDT** | `0xd6dF30701Ec33C78077D871e82f70287C79B3A0a` | [View](https://sepolia.etherscan.io/address/0xd6dF30701Ec33C78077D871e82f70287C79B3A0a) |
 
 #### Aave aTokens (Mock)
 
 | aToken | Address | Underlying |
 |--------|---------|------------|
-| **maETH** | `0x8beCc1B30084d0404b79bdDb5dB4F30f56c67C95` | mETH |
-| **maUSDC** | `0xfE5080cA75Af4612F31f39107d7E8782D644bf80` | mUSDC |
-| **maWBTC** | `0x6648c432Fa3Cf44681FdCaE58e7A1174b11c70b2` | mWBTC |
-| **maUSDT** | `0x85284b6EF7e443A27b54BC6914befdD2f2A6c61A` | mUSDT |
+| **maETH** | `0x0a0Dea09406f50726C22913472A23ED38175e93b` | mETH |
+| **maUSDC** | `0xA269315eA368CE2d5b9bca44aD58e1BD500ad878` | mUSDC |
+| **maWBTC** | `0x3cCf46C7c3D05F28be5D026b3301A3998FcDD5AB` | mWBTC |
+| **maUSDT** | `0x9eEf8d21C2db1Be765B5D8D8300E1ef6Ee14Db98` | mUSDT |
 
 #### Deployed Pools
 
 | Pool | Pool ID |
 |------|--------|
-| **mUSDC/mETH** | `0x90b5f49d49079bfe71c1fb9787a0381eeca7f4ccee7ba0d8de387e2fffd96d8b` |
-| **mWBTC/mETH** | `0xe422877004fdcad519eb76f4a080371ac9a9d631ba2b5d27c771d479862e1d9c` |
-| **mUSDT/mETH** | `0x3d41b451e3c6abf6f5c8b1aa2aaa157dd28f55a4bb6f78c511ff6c529782bd69` |
+| **mUSDC/mETH** | `0x359533828ea111dbbc1972077ac066a2897aa0c858cd0222574c69cbe5b7363a` |
+| **mWBTC/mETH** | `0x44db1798b86a9bd96fb3338f9541dc72068dd5f001fc788d2e12bdc5cb439aed` |
+| **mUSDT/mETH** | `0xe13f348a5ad53113f57940c858d272e73409e9437b752233b535952c7ed70480` |
 
 ### Chainlink Oracles (Sepolia — Real Feeds)
 
@@ -332,12 +332,14 @@ struct PoolState {
 | USDC/USD | `0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E` | Stablecoin validation |
 | BTC/ETH (Ratio) | `0xc596b108197aEF64c6d349DcA8515dFFe4615502` | WBTC/ETH pool (derived ratio oracle) |
 
+For deterministic testing, use the on‑chain mock feed in [src/mocks/MockPriceFeed.sol](../src/mocks/MockPriceFeed.sol) and enable it via `USE_MOCK_FEEDS=true` in the deploy scripts.
+
 ### Chainlink Automation & Functions
 
 | Component | Details |
 |-----------|--------|
-| **Automation Upkeep** | "hackmoney-1" — Active, 5 LINK funded, gas limit 500,000 |
-| **Functions Subscription** | #6243 — 7 LINK funded |
+| **Automation Upkeep** | Register via automation.chain.link |
+| **Functions Subscription** | Your subscription ID |
 | **DON ID** | `fun-ethereum-sepolia-1` |
 | **Functions Router** | `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` |
 

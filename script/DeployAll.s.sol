@@ -13,10 +13,10 @@ import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
 import {SentinelHook} from "../src/SentinelHook.sol";
 import {SwapHelper} from "../src/SwapHelper.sol";
-import {SentinelAutomation} from "../src/automation/SentinelAutomation.sol";
 
 import {MockERC20} from "../test/mocks/MockERC20.sol";
-import {RatioOracle} from "../test/mocks/RatioOracle.sol";
+import {RatioOracle} from "../src/mocks/RatioOracle.sol";
+import {MockPriceFeed} from "../src/mocks/MockPriceFeed.sol";
 import {MockAavePool} from "../test/mocks/MockAavePool.sol";
 
 interface ISentinelHookAdmin {
@@ -28,7 +28,7 @@ interface ISentinelHookAdmin {
 }
 
 /// @title DeployAll
-/// @notice Single script to deploy the complete demo + automation on Sepolia
+/// @notice Single script to deploy the complete demo on Sepolia
 /// @dev Run with: forge script script/DeployAll.s.sol --account test1 --sender <ADDR> --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
 contract DeployAll is Script {
     using PoolIdLibrary for PoolKey;
@@ -45,28 +45,37 @@ contract DeployAll is Script {
     address constant CREATE2_DEPLOYER =
         0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    // Chainlink Functions (Ethereum Sepolia)
-    address constant CL_FUNCTIONS_ROUTER =
-        0xb83E47C2bC239B3bf370bc41e1459A34b41238D0;
-    bytes32 constant CL_DON_ID =
-        0x66756e2d657468657265756d2d7365706f6c69612d3100000000000000000000; // fun-ethereum-sepolia-1
-    uint32 constant CL_GAS_LIMIT = 300_000;
-
     function run() external {
         require(block.chainid == 11155111, "Must run on Sepolia");
 
-        // Load Functions subscription ID from env
-        uint64 subId = uint64(vm.envUint("CL_SUB_ID"));
-
         vm.startBroadcast();
         address deployer = msg.sender;
+        address maintainer = vm.envOr("CHAINLINK_MAINTAINER", deployer);
+
+        bool useMockFeeds = vm.envOr("USE_MOCK_FEEDS", false);
+        address ethUsdFeed = ETH_USD_FEED;
+        address btcUsdFeed = BTC_USD_FEED;
+        address usdcUsdFeed = USDC_USD_FEED;
 
         console.log("========================================");
-        console.log("  SENTINEL FULL + AUTOMATION DEPLOY");
+        console.log("  SENTINEL FULL DEMO DEPLOY");
         console.log("========================================");
         console.log("Deployer:", deployer);
-        console.log("Functions Router:", CL_FUNCTIONS_ROUTER);
-        console.log("Subscription ID:", subId);
+
+        if (useMockFeeds) {
+            console.log("\n--- Using Mock Price Feeds ---");
+            MockPriceFeed ethUsd = new MockPriceFeed(8, 2000e8, "ETH / USD");
+            MockPriceFeed btcUsd = new MockPriceFeed(8, 60000e8, "BTC / USD");
+            MockPriceFeed usdcUsd = new MockPriceFeed(8, 1e8, "USDC / USD");
+
+            ethUsdFeed = address(ethUsd);
+            btcUsdFeed = address(btcUsd);
+            usdcUsdFeed = address(usdcUsd);
+
+            console.log("Mock ETH/USD:", ethUsdFeed);
+            console.log("Mock BTC/USD:", btcUsdFeed);
+            console.log("Mock USDC/USD:", usdcUsdFeed);
+        }
 
         // ─── 1. Deploy Mock Tokens ───────────────────────────────
         console.log("\n--- 1. Deploying Mock Tokens ---");
@@ -122,8 +131,8 @@ contract DeployAll is Script {
         // ─── 4. Deploy RatioOracle for BTC/ETH ──────────────────
         console.log("\n--- 4. Deploying RatioOracle ---");
         RatioOracle btcEthOracle = new RatioOracle(
-            BTC_USD_FEED,
-            ETH_USD_FEED,
+            btcUsdFeed,
+            ethUsdFeed,
             "BTC/ETH Ratio"
         );
         console.log("BTC/ETH Oracle:", address(btcEthOracle));
@@ -136,7 +145,7 @@ contract DeployAll is Script {
         bytes memory constructorArgs = abi.encode(
             POOL_MANAGER,
             address(mockAave),
-            deployer, // maintainer
+            maintainer, // maintainer
             deployer // owner
         );
 
@@ -150,7 +159,7 @@ contract DeployAll is Script {
         SentinelHook hook = new SentinelHook{salt: salt}(
             IPoolManager(POOL_MANAGER),
             address(mockAave),
-            deployer,
+            maintainer,
             deployer
         );
         console.log("SentinelHook:", address(hook));
@@ -197,7 +206,7 @@ contract DeployAll is Script {
 
             hook.initializePool(
                 key1,
-                ETH_USD_FEED,
+                ethUsdFeed,
                 true,
                 a0,
                 a1,
@@ -269,7 +278,7 @@ contract DeployAll is Script {
 
             hook.initializePool(
                 key3,
-                ETH_USD_FEED,
+                ethUsdFeed,
                 true,
                 a0,
                 a1,
@@ -304,67 +313,41 @@ contract DeployAll is Script {
         // ─── 9. Seed Pools ──────────────────────────────────────
         console.log("\n--- 9. Seeding Pools with Initial Liquidity ---");
         {
-            (Currency c0, ) = _sort(address(mETH), address(mUSDC));
-            uint256 a0 = Currency.unwrap(c0) == address(mETH)
+            uint256 a0 = Currency.unwrap(key1.currency0) == address(mETH)
                 ? 10 ether
                 : 25_000e6;
-            uint256 a1 = Currency.unwrap(c0) == address(mETH)
-                ? 25_000e6
-                : 10 ether;
+            uint256 a1 = Currency.unwrap(key1.currency1) == address(mETH)
+                ? 10 ether
+                : 25_000e6;
             uint256 dep1Shares = hook.depositLiquidity(key1, a0, a1);
             console.log("Pool 1 seeded, shares:", dep1Shares);
         }
         {
-            (Currency t0, ) = _sort(address(mWBTC), address(mETH));
-            uint256 amt0 = Currency.unwrap(t0) == address(mETH)
+            uint256 amt0 = Currency.unwrap(key2.currency0) == address(mETH)
                 ? 10 ether
                 : 1e8;
-            uint256 amt1 = Currency.unwrap(t0) == address(mETH)
-                ? 1e8
-                : 10 ether;
+            uint256 amt1 = Currency.unwrap(key2.currency1) == address(mETH)
+                ? 10 ether
+                : 1e8;
             uint256 dep2Shares = hook.depositLiquidity(key2, amt0, amt1);
             console.log("Pool 2 seeded, shares:", dep2Shares);
         }
         {
-            (Currency c0, ) = _sort(address(mETH), address(mUSDT));
-            uint256 a0 = Currency.unwrap(c0) == address(mETH)
+            uint256 a0 = Currency.unwrap(key3.currency0) == address(mETH)
                 ? 10 ether
                 : 25_000e6;
-            uint256 a1 = Currency.unwrap(c0) == address(mETH)
-                ? 25_000e6
-                : 10 ether;
+            uint256 a1 = Currency.unwrap(key3.currency1) == address(mETH)
+                ? 10 ether
+                : 25_000e6;
             uint256 dep3Shares = hook.depositLiquidity(key3, a0, a1);
             console.log("Pool 3 seeded, shares:", dep3Shares);
         }
 
-        // ─── 10. Deploy SentinelAutomation + Register Pools ─────
-        console.log("\n--- 10. Deploying SentinelAutomation ---");
-        string memory source = vm.readFile(
-            "src/automation/functions/rebalancer.js"
-        );
-        SentinelAutomation automation = new SentinelAutomation(
-            address(hook),
-            CL_FUNCTIONS_ROUTER,
-            CL_DON_ID,
-            subId,
-            CL_GAS_LIMIT,
-            source
-        );
-        console.log("SentinelAutomation:", address(automation));
-
-        console.log("\n--- 11. Setting Maintainer ---");
+        console.log("\n--- 10. Setting Maintainer ---");
         ISentinelHookAdmin hookAdmin = ISentinelHookAdmin(address(hook));
         console.log("Current maintainer:", hookAdmin.maintainer());
-        hookAdmin.setMaintainer(address(automation));
-        console.log("New maintainer:", address(automation));
-
-        console.log("\n--- 12. Registering Pools ---");
-        automation.addPool(poolId1, 0);
-        console.log("Pool 1 registered as type 0");
-        automation.addPool(poolId2, 1);
-        console.log("Pool 2 registered as type 1");
-        automation.addPool(poolId3, 2);
-        console.log("Pool 3 registered as type 2");
+        hookAdmin.setMaintainer(maintainer);
+        console.log("New maintainer:", maintainer);
 
         vm.stopBroadcast();
 
@@ -377,7 +360,6 @@ contract DeployAll is Script {
         console.log("SWAP_HELPER:        ", address(swapHelper));
         console.log("MOCK_AAVE:          ", address(mockAave));
         console.log("BTC_ETH_ORACLE:     ", address(btcEthOracle));
-        console.log("SENTINEL_AUTOMATION:", address(automation));
         console.log("---");
         console.log("mETH:              ", address(mETH));
         console.log("mUSDC:             ", address(mUSDC));
@@ -403,19 +385,36 @@ contract DeployAll is Script {
         );
         console.log("========================================");
 
-        console.log("\n=== REMAINING MANUAL STEPS ===");
-        console.log(
-            "1. Add SentinelAutomation as consumer to your Functions subscription:"
-        );
-        console.log("   -> https://functions.chain.link");
-        console.log("   -> Subscription", subId);
-        console.log("   -> Add Consumer:", address(automation));
-        console.log("2. Register Custom Logic Upkeep on Chainlink Automation:");
-        console.log("   -> https://automation.chain.link/sepolia");
-        console.log("   -> Register new upkeep -> Custom logic");
-        console.log("   -> Target contract:", address(automation));
-        console.log("   -> Fund with LINK (3-5 LINK recommended)");
-        console.log("========================================");
+        // ─── Output JSON ────────────────────────────────────────
+        string memory json = "deployment_artifacts";
+        vm.serializeAddress(json, "POOL_MANAGER", POOL_MANAGER);
+        vm.serializeAddress(json, "SENTINEL_HOOK", address(hook));
+        vm.serializeAddress(json, "SWAP_HELPER", address(swapHelper));
+        vm.serializeAddress(json, "MOCK_AAVE", address(mockAave));
+        vm.serializeAddress(json, "BTC_ETH_ORACLE", address(btcEthOracle));
+        vm.serializeAddress(json, "ETH_USD_FEED", ethUsdFeed);
+        vm.serializeAddress(json, "BTC_USD_FEED", btcUsdFeed);
+        vm.serializeAddress(json, "USDC_USD_FEED", usdcUsdFeed);
+        vm.serializeBool(json, "USE_MOCK_FEEDS", useMockFeeds);
+        
+        vm.serializeAddress(json, "mETH", address(mETH));
+        vm.serializeAddress(json, "mUSDC", address(mUSDC));
+        vm.serializeAddress(json, "mWBTC", address(mWBTC));
+        vm.serializeAddress(json, "mUSDT", address(mUSDT));
+
+        vm.serializeAddress(json, "maETH", maETH);
+        vm.serializeAddress(json, "maUSDC", maUSDC);
+        vm.serializeAddress(json, "maWBTC", maWBTC);
+        vm.serializeAddress(json, "maUSDT", maUSDT);
+
+        vm.serializeBytes32(json, "POOL_ID_ETH_USDC", PoolId.unwrap(poolId1));
+        vm.serializeBytes32(json, "POOL_ID_WBTC_ETH", PoolId.unwrap(poolId2));
+        string memory finalJson = vm.serializeBytes32(json, "POOL_ID_ETH_USDT", PoolId.unwrap(poolId3));
+
+        string memory path = string.concat(vm.projectRoot(), "/deployment.json");
+        vm.writeJson(finalJson, path);
+        console.log("Deployment artifacts written to:", path);
+
     }
 
     function _sort(

@@ -6,7 +6,7 @@ via_ir = true
 optimizer = true
 optimizer_runs = 200
 solc = "0.8.24"
-fs_permissions = [{ access = "read", path = "src/automation/functions" }]
+fs_permissions = [{ access = "read", path = "./" }, { access = "write", path = "./" }]
 
 # RPC Endpoints (use environment variables)
 [rpc_endpoints]

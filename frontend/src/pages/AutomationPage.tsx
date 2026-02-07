@@ -31,8 +31,17 @@ import {
 } from "lucide-react"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { parseUnits } from "viem"
-import { sentinelHookAbi } from "@/lib/abi"
-import { SENTINEL_HOOK_ADDRESS, POOLS, etherscanTx } from "@/lib/addresses"
+import { sentinelHookAbi, mockPriceFeedAbi } from "@/lib/abi"
+import {
+  SENTINEL_HOOK_ADDRESS,
+  POOLS,
+  etherscanTx,
+  USE_MOCK_FEEDS,
+  ETH_USD_FEED_ADDRESS,
+  BTC_USD_FEED_ADDRESS,
+  USDC_USD_FEED_ADDRESS,
+  MOCK_FEED_DECIMALS,
+} from "@/lib/addresses"
 import { useMaintainer, useOwner } from "@/hooks/use-sentinel"
 
 const hookAddress = SENTINEL_HOOK_ADDRESS as `0x${string}`
@@ -52,6 +61,13 @@ export function AutomationPage() {
 
   const { writeContract: maintain, data: maintainHash, isPending: isMaintaining, error: maintainError } = useWriteContract()
   const { isSuccess: maintainConfirmed, data: receipt } = useWaitForTransactionReceipt({ hash: maintainHash })
+
+  const [ethUsdPrice, setEthUsdPrice] = useState("2000")
+  const [btcUsdPrice, setBtcUsdPrice] = useState("60000")
+  const [usdcUsdPrice, setUsdcUsdPrice] = useState("1.00")
+
+  const { writeContract: setFeedPrice, data: feedTxHash, isPending: isSettingPrice } = useWriteContract()
+  const { isSuccess: feedConfirmed } = useWaitForTransactionReceipt({ hash: feedTxHash })
 
   const isMaintainerOrOwner = address && (
     address.toLowerCase() === maintainer?.toString().toLowerCase() ||
@@ -78,6 +94,16 @@ export function AutomationPage() {
     setTickLower("-887220")
     setTickUpper("887220")
     setVolatility("200")
+  }
+
+  const handleSetPrice = (feedAddress: string, value: string) => {
+    if (!feedAddress || feedAddress === "0x0000000000000000000000000000000000000000") return
+    setFeedPrice({
+      address: feedAddress as `0x${string}`,
+      abi: mockPriceFeedAbi,
+      functionName: "setPrice",
+      args: [parseUnits(value, MOCK_FEED_DECIMALS)],
+    })
   }
 
   const chainlinkAutomation = {
@@ -318,6 +344,97 @@ export function AutomationPage() {
                 on volatility. Maintain calls automatically route idle capital
                 to Aave v3 for yield generation.
               </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Demo Helpers */}
+        <Card className="border-border/30 bg-card/80 lg:col-span-2">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-[oklch(0.72_0.19_155)]" />
+              <div>
+                <CardTitle>Demo Helpers</CardTitle>
+                <CardDescription>
+                  Update mock oracle prices (owner-only). Enable with USE_MOCK_FEEDS=true.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!USE_MOCK_FEEDS && (
+              <div className="rounded-md border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
+                Mock feeds are disabled. Re-deploy with USE_MOCK_FEEDS=true to enable price controls.
+              </div>
+            )}
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">ETH / USD</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={ethUsdPrice}
+                    onChange={(e) => setEthUsdPrice(e.target.value)}
+                    className="bg-muted/30"
+                    placeholder="2000"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={!USE_MOCK_FEEDS || isSettingPrice}
+                    onClick={() => handleSetPrice(ETH_USD_FEED_ADDRESS, ethUsdPrice)}
+                  >
+                    Set
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">BTC / USD</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={btcUsdPrice}
+                    onChange={(e) => setBtcUsdPrice(e.target.value)}
+                    className="bg-muted/30"
+                    placeholder="60000"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={!USE_MOCK_FEEDS || isSettingPrice}
+                    onClick={() => handleSetPrice(BTC_USD_FEED_ADDRESS, btcUsdPrice)}
+                  >
+                    Set
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">USDC / USD</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={usdcUsdPrice}
+                    onChange={(e) => setUsdcUsdPrice(e.target.value)}
+                    className="bg-muted/30"
+                    placeholder="1.00"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={!USE_MOCK_FEEDS || isSettingPrice}
+                    onClick={() => handleSetPrice(USDC_USD_FEED_ADDRESS, usdcUsdPrice)}
+                  >
+                    Set
+                  </Button>
+                </div>
+              </div>
+              {feedTxHash && (
+                <p className="text-xs text-muted-foreground">
+                  {feedConfirmed ? "Price updated" : "Updating price..."} ·{" "}
+                  <a
+                    className="underline underline-offset-2"
+                    href={etherscanTx(feedTxHash)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    view tx
+                  </a>
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

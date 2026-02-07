@@ -1,96 +1,26 @@
+# Deployment (Sepolia)
 
-# == Logs ==
-#   ========================================
-#     SENTINEL FULL + AUTOMATION DEPLOY
-#   ========================================
-#   Deployer: 0x48089CcF5e579Ab41703Acd85E54a9151d6B0D6C
-#   Functions Router: 0xb83E47C2bC239B3bf370bc41e1459A34b41238D0
-#   Subscription ID: 6243
-  
-# --- 1. Deploying Mock Tokens ---
-#   mETH:   0x728cAd9d02119FbD637279079B063A58F5DC39b8
-#   mUSDC:  0xc5bFb66e99EcA697a5Cb914390e02579597d45f9
-#   mWBTC:  0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA
-#   mUSDT:  0x757532BDebcf3568fDa48aD7dea78B5644D70E41
-  
-# --- 2. Minting Tokens ---
-#   Minted: 1000 mETH, 10M mUSDC, 100 mWBTC, 10M mUSDT
-  
-# --- 3. Deploying Mock Aave ---
-#   MockAave: 0x5D1359bC5442bA7dA9821E2FDee4d277730451D5
-#   maETH:    0x8beCc1B30084d0404b79bdDb5dB4F30f56c67C95
-#   maUSDC:   0xfE5080cA75Af4612F31f39107d7E8782D644bf80
-#   maWBTC:   0x6648c432Fa3Cf44681FdCaE58e7A1174b11c70b2
-#   maUSDT:   0x85284b6EF7e443A27b54BC6914befdD2f2A6c61A
-  
-# --- 4. Deploying RatioOracle ---
-#   BTC/ETH Oracle: 0x0f8C8f8D3F1D74B959a83393eaE419558277dd8d
-  
-# --- 5. Deploying SentinelHook ---
-#   SentinelHook: 0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080
-#   Hook permissions verified OK
-  
-# --- 6. Deploying SwapHelper ---
-#   SwapHelper: 0xFE9047BaA04072Caf988Ee11160585952828866f
-  
-# --- 7. Initializing Pools ---
-#   Pool 1 (mETH/mUSDC): 0x90b5f49d49079bfe71c1fb9787a0381eeca7f4ccee7ba0d8de387e2fffd96d8b
-#   Pool 2 (mWBTC/mETH): 0xe422877004fdcad519eb76f4a080371ac9a9d631ba2b5d27c771d479862e1d9c
-#   Pool 3 (mETH/mUSDT): 0x3d41b451e3c6abf6f5c8b1aa2aaa157dd28f55a4bb6f78c511ff6c529782bd69
-  
-# --- 8. Setting Approvals ---
-#   All approvals set
-  
-# --- 9. Seeding Pools with Initial Liquidity ---
-#   Pool 1 seeded, shares: 25000000000
-#   Pool 2 seeded, shares: 100000000
-#   Pool 3 seeded, shares: 25000000000
-  
-# --- 10. Deploying SentinelAutomation ---
-#   SentinelAutomation: 0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85
-  
-# --- 11. Setting Maintainer ---
-#   Current maintainer: 0x48089CcF5e579Ab41703Acd85E54a9151d6B0D6C
-#   New maintainer: 0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85
-  
-# --- 12. Registering Pools ---
-#   Pool 1 registered as type 0
-#   Pool 2 registered as type 1
-#   Pool 3 registered as type 2
-  
-# ========================================
-#     DEPLOYMENT COMPLETE - ADDRESSES
-#   ========================================
-#   POOL_MANAGER:        0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A
-#   SENTINEL_HOOK:       0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080
-#   SWAP_HELPER:         0xFE9047BaA04072Caf988Ee11160585952828866f
-#   MOCK_AAVE:           0x5D1359bC5442bA7dA9821E2FDee4d277730451D5
-#   BTC_ETH_ORACLE:      0x0f8C8f8D3F1D74B959a83393eaE419558277dd8d
-#   SENTINEL_AUTOMATION: 0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85
-#   ---
-#   mETH:               0x728cAd9d02119FbD637279079B063A58F5DC39b8
-#   mUSDC:              0xc5bFb66e99EcA697a5Cb914390e02579597d45f9
-#   mWBTC:              0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA
-#   mUSDT:              0x757532BDebcf3568fDa48aD7dea78B5644D70E41
-#   ---
-#   maETH:              0x8beCc1B30084d0404b79bdDb5dB4F30f56c67C95
-#   maUSDC:             0xfE5080cA75Af4612F31f39107d7E8782D644bf80
-#   maWBTC:             0x6648c432Fa3Cf44681FdCaE58e7A1174b11c70b2
-#   maUSDT:             0x85284b6EF7e443A27b54BC6914befdD2f2A6c61A
-#   ---
-#   POOL1 (mETH/mUSDC):  0x90b5f49d49079bfe71c1fb9787a0381eeca7f4ccee7ba0d8de387e2fffd96d8b
-#   POOL2 (mWBTC/mETH):  0xe422877004fdcad519eb76f4a080371ac9a9d631ba2b5d27c771d479862e1d9c
-#   POOL3 (mETH/mUSDT):  0x3d41b451e3c6abf6f5c8b1aa2aaa157dd28f55a4bb6f78c511ff6c529782bd69
-#   ========================================
-  
-# === REMAINING MANUAL STEPS ===
-#   1. Add SentinelAutomation as consumer to your Functions subscription:
-#      -> https://functions.chain.link
-#      -> Subscription 6243
-#      -> Add Consumer: 0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85
-#   2. Register Custom Logic Upkeep on Chainlink Automation:
-#      -> https://automation.chain.link/sepolia
-#      -> Register new upkeep -> Custom logic
-#      -> Target contract: 0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85
-#      -> Fund with LINK (3-5 LINK recommended)
-#   ========================================
+## Core
+- POOL_MANAGER: 0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A
+- SENTINEL_HOOK: 0x386bc633421dD0416E357ae1c34177568dA52080
+- SENTINEL_AUTOMATION (Automation‑only): 0xDc395e555E172C38b4240b3cADd2E0B28610FD09
+- SWAP_HELPER: 0x8B6e80F6b28b07b16E532A647d00c64bDb6c29d8
+- MOCK_AAVE: 0x5e541e338E73BCdAD9cD4F61cd6DD4e6434B214e
+- BTC/ETH ORACLE: 0xc596b108197aEF64c6d349DcA8515dFFe4615502
+
+## Pools
+- POOL_ID_ETH_USDC: 0xebd975263c29db205914ec03bc0bb7b43c34ab833ae24c7f521a4c0edc3eb8f5
+- POOL_ID_WBTC_ETH: 0xb86d98b048c5f61f5b9e8a7c7d769b0971aba0948777e349a21314e1429f9266
+- POOL_ID_ETH_USDT: 0x42cc361675a03875472eb6f267b516a0f88a4cafe0d7265905b761f2fbded3d6
+
+## Mock Tokens
+- mETH: 0xbb8Db005968AD75dc1521c61a2bAC6e7CB5C42d5
+- mUSDC: 0xaA19cF38Ec024e47542e0aFfb029784486317d3A
+- mWBTC: 0xb75fDB4A4b685429447B54972e089e1c9b239fCF
+- mUSDT: 0x19180e57e6640f9A51dEF8c8a7137c78e75704D2
+
+## Mock Aave aTokens
+- maETH: 0xE7F85Ee92dd51bbAB76700DF0198C366c2F9D07B
+- maUSDC: 0x2b9a68fa35bb2F6f88E90FB68265315B9dc8fb03
+- maWBTC: 0x049Ad2fc1b7d105C6c7502Cd1E1EF8af74c59139
+- maUSDT: 0x4197Aa46167911C3Ed87d023C0B704e597be8989

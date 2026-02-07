@@ -2,6 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {AutomationCompatibleInterface} from "foundry-chainlink-toolkit/lib/chainlink-brownie-contracts/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
 
 // ============================================================================
 // CHAINLINK INTERFACES
@@ -77,7 +80,7 @@ interface ISentinelHook {
 
 /// @title SentinelAutomation
 /// @notice Chainlink Automation + Functions for 3 pools: ETH/USDC, WBTC/ETH, ETH/USDT
-contract SentinelAutomation is IFunctionsClient {
+contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
     // ========== CONSTANTS ==========
     uint8 public constant MAX_POOLS = 3;
 
@@ -88,7 +91,9 @@ contract SentinelAutomation is IFunctionsClient {
 
     // ========== STATE ==========
     ISentinelHook public immutable hook;
+    IPoolManager public immutable poolManager;
     IFunctionsRouter public immutable router;
+    bool public useFunctions;
     address public owner;
 
     // Pool Configuration
@@ -131,18 +136,22 @@ contract SentinelAutomation is IFunctionsClient {
     // ========== CONSTRUCTOR ==========
     constructor(
         address _hook,
+        address _poolManager,
         address _router,
         bytes32 _donId,
         uint64 _subscriptionId,
         uint32 _gasLimit,
-        string memory _source
+        string memory _source,
+        bool _useFunctions
     ) {
         hook = ISentinelHook(_hook);
+        poolManager = IPoolManager(_poolManager);
         router = IFunctionsRouter(_router);
         donId = _donId;
         subscriptionId = _subscriptionId;
         gasLimit = _gasLimit;
         source = _source;
+        useFunctions = _useFunctions;
         owner = msg.sender;
     }
 
@@ -170,7 +179,7 @@ contract SentinelAutomation is IFunctionsClient {
     /// @notice Checks all 3 pools in round-robin fashion
     function checkUpkeep(
         bytes calldata
-    ) external view returns (bool upkeepNeeded, bytes memory performData) {
+    ) external returns (bool upkeepNeeded, bytes memory performData) {
         if (requestPending || poolCount == 0) return (false, "");
 
         // Round-robin: check next pool after lastCheckedPool
@@ -184,8 +193,13 @@ contract SentinelAutomation is IFunctionsClient {
                 .poolStates(pools[idx].poolId);
             if (!isInit) continue;
 
-            // This pool needs checking
-            return (true, abi.encode(idx));
+            if (useFunctions) {
+                return (true, abi.encode(idx));
+            }
+
+            if (_needsRebalance(pools[idx].poolId)) {
+                return (true, abi.encode(idx));
+            }
         }
 
         return (false, "");
@@ -193,10 +207,25 @@ contract SentinelAutomation is IFunctionsClient {
 
     /// @notice Sends request to Chainlink Functions for specific pool
     function performUpkeep(bytes calldata performData) external {
+        if (performData.length == 0) return;
         if (requestPending) revert RequestAlreadyPending();
 
         uint8 poolIndex = abi.decode(performData, (uint8));
+        if (poolIndex >= poolCount) return;
         PoolConfig memory pool = pools[poolIndex];
+        if (!pool.active) return;
+
+        if (!useFunctions) {
+            (bool shouldRebalance, int24 newLower, int24 newUpper, uint256 volatility) =
+                _computeRebalance(pool.poolId);
+
+            if (!shouldRebalance) return;
+
+            hook.maintain(pool.poolId, newLower, newUpper, volatility);
+            lastCheckedPool = poolIndex;
+            emit RebalanceExecuted(poolIndex, newLower, newUpper);
+            return;
+        }
 
         // Build request with pool info
         bytes memory request = _buildRequest(pool.poolType);
@@ -223,6 +252,7 @@ contract SentinelAutomation is IFunctionsClient {
         bytes memory response,
         bytes memory err
     ) external override {
+        if (!useFunctions) revert OnlyRouter();
         if (msg.sender != address(router)) revert OnlyRouter();
 
         uint8 poolIndex = pendingPoolIndex;
@@ -265,6 +295,10 @@ contract SentinelAutomation is IFunctionsClient {
         donId = _donId;
         subscriptionId = _subId;
         gasLimit = _gasLimit;
+    }
+
+    function setUseFunctions(bool _useFunctions) external onlyOwner {
+        useFunctions = _useFunctions;
     }
 
     // ========== VIEW ==========
@@ -344,5 +378,81 @@ contract SentinelAutomation is IFunctionsClient {
             }
         }
         return 0;
+    }
+
+    function _needsRebalance(PoolId poolId) internal view returns (bool) {
+        (
+            int24 lower,
+            int24 upper,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            int24 tickSpacing,
+            ,
+            bool isInit
+        ) = hook.poolStates(poolId);
+        if (!isInit) return false;
+        (, int24 tickCurrent, , ) = StateLibrary.getSlot0(poolManager, poolId);
+        return (tickCurrent < lower || tickCurrent > upper) && tickSpacing > 0;
+    }
+
+    function _computeRebalance(PoolId poolId)
+        internal
+        view
+        returns (bool, int24, int24, uint256)
+    {
+        (
+            int24 lower,
+            int24 upper,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            int24 tickSpacing,
+            ,
+            bool isInit
+        ) = hook.poolStates(poolId);
+
+        if (!isInit || tickSpacing <= 0) return (false, 0, 0, 0);
+
+        (, int24 tickCurrent, , ) = StateLibrary.getSlot0(poolManager, poolId);
+        if (tickCurrent >= lower && tickCurrent <= upper) return (false, 0, 0, 0);
+
+        int24 width = upper - lower;
+        if (width <= 0) {
+            width = tickSpacing * 20;
+        }
+
+        int24 rounded = (tickCurrent / tickSpacing) * tickSpacing;
+        int24 half = width / 2;
+        int24 newLower = rounded - half;
+        int24 newUpper = newLower + width;
+
+        if (newLower >= newUpper) return (false, 0, 0, 0);
+
+        return (true, newLower, newUpper, 0);
     }
 }

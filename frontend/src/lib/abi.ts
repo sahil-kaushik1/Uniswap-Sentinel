@@ -207,6 +207,17 @@ export const sentinelHookAbi = [
   },
 ] as const
 
+// MockPriceFeed ABI (demo helpers)
+export const mockPriceFeedAbi = [
+  {
+    name: "setPrice",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "answer", type: "int256" }],
+    outputs: [],
+  },
+] as const
+
 // ERC20 ABI fragment (approve + balanceOf + allowance)
 export const erc20Abi = [
   {

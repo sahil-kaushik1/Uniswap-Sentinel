@@ -28,6 +28,18 @@ sequenceDiagram
     Auto->>Hook: maintain(poolId, newLower, newUpper, volatility)
 ```
 
+## Critical Oracle Needs (Simplified)
+
+These are the minimum production-safety assumptions the agent relies on:
+
+- **Freshness:** `updatedAt` must be recent (stale data is rejected).
+- **Non‑zero price:** `answer` must be > 0.
+- **Decimals normalization:** prices are scaled to 18 decimals in `OracleLib`.
+- **Per‑pool inversion:** `priceFeedInverted` handles feed orientation.
+- **Controlled testing:** use the on‑chain mock feed for deterministic agent runs.
+
+For local/dev, use [src/mocks/MockPriceFeed.sol](../src/mocks/MockPriceFeed.sol) to set prices on demand.
+
 ## Contracts
 
 - [src/automation/SentinelAutomation.sol](src/automation/SentinelAutomation.sol)
@@ -50,30 +62,34 @@ sequenceDiagram
 
 ## Deployment
 
-Use one of the following scripts:
+Use the following scripts:
 
-- **Main deploy (demo + automation):** [script/DeployAll.s.sol](script/DeployAll.s.sol)
-- **Automation-only deploy:** [script/DeployAutomationFull.s.sol](script/DeployAutomationFull.s.sol)
+- **Demo deploy (mock everything):** [script/DeployAll.s.sol](script/DeployAll.s.sol)
+- **Automation deploy + registration:** [script/DeployAutomationFull.s.sol](script/DeployAutomationFull.s.sol)
 
-**Required env vars**:
+**Required env vars (Functions mode)**:
 
 - `PRIVATE_KEY`
-- `SENTINEL_HOOK_ADDRESS`
 - `CL_FUNCTIONS_ROUTER`
 - `CL_DON_ID`
 - `CL_SUB_ID`
 - `CL_GAS_LIMIT`
 - `CL_FUNCTIONS_SOURCE` (optional; if unset, uses [src/automation/functions/rebalancer.js](src/automation/functions/rebalancer.js))
+- `DEPLOYMENT_JSON` (optional; defaults to `deployment.json` from DeployAll)
+
+**Automation‑only env (no Functions):**
+
+- `USE_FUNCTIONS=false`
 
 ### Deploy
 
-Run the script to deploy the automation contract and print next steps:
+Run the script to deploy the automation contract and print next steps (reads `deployment.json`):
 
 - Script: [script/DeployAutomationFull.s.sol](script/DeployAutomationFull.s.sol)
 
 ### Register Pools
 
-Register one pool at a time with env vars:
+Only needed if you use [script/DeploySentinelAutomation.s.sol](script/DeploySentinelAutomation.s.sol) instead of `DeployAutomationFull`:
 
 - `AUTOMATION_ADDRESS`
 - `POOL_ID` (bytes32)
@@ -81,10 +97,7 @@ Register one pool at a time with env vars:
 
 ### Set Maintainer
 
-Once the automation contract is deployed, set it as the hook maintainer:
-
-- `SENTINEL_HOOK_ADDRESS`
-- `AUTOMATION_ADDRESS`
+Only needed if you use [script/DeploySentinelAutomation.s.sol](script/DeploySentinelAutomation.s.sol) and want to set maintainer separately.
 
 ## Chainlink Automation for Sentinel Protocol
 
@@ -118,6 +131,9 @@ flowchart TB
 
 ### Pattern 1: Chainlink Automation Only (Simple)
 Best for: **Hackathons, MVPs, single pool**
+
+This mode is now supported directly in `SentinelAutomation` by setting `USE_FUNCTIONS=false`.
+The contract reads pool `slot0` on‑chain and recenters the range when the tick leaves the active band.
 
 ```mermaid
 sequenceDiagram
@@ -176,325 +192,29 @@ sequenceDiagram
 
 ## Implementation Guide
 
-## Offchain Runner (No Chainlink)
+## Demo Mode (Automation-only)
 
-If you want a fully offchain loop that directly calls `SentinelHook.maintain()` (great for demos and free hosting), use the Azure agent in [azure-agent/README.md](../azure-agent/README.md).
+For deterministic demos without Functions, deploy automation in **Automation-only** mode:
 
-Summary:
+- Set `USE_FUNCTIONS=false`
+- Run `forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv`
+- Register upkeep at [automation.chain.link](https://automation.chain.link/)
 
-- Configure `azure-agent/.env` (hook address, private key, pools).
-- Run `npm start` in [azure-agent](../azure-agent).
-- Optional: `DRY_RUN=true` to validate without transactions.
+Pair this with mock feeds via `USE_MOCK_FEEDS=true` in the deploy script for fully controlled demos.
 
-### Step 1: Deploy the Automation Contract
+### Step 1: Deploy Automation
 
-Create `src/automation/SentinelAutomation.sol`:
+Use [script/DeployAutomationFull.s.sol](script/DeployAutomationFull.s.sol) (recommended) or
+[script/DeploySentinelAutomation.s.sol](script/DeploySentinelAutomation.s.sol) for manual steps.
 
-```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+### Step 2: Register Upkeep + (Optional) Functions
 
-import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
-import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+- Register a custom logic upkeep for the deployed `SentinelAutomation`.
+- If `USE_FUNCTIONS=true`, add the automation contract as a consumer to your Functions subscription.
 
-interface ISentinelHook {
-    struct PoolState {
-        int24 activeTickLower;
-        int24 activeTickUpper;
-        uint128 activeLiquidity;
-        address priceFeed;
-        uint256 maxDeviationBps;
-        address aToken0;
-        address aToken1;
-        address currency0;
-        address currency1;
-        uint256 totalShares;
-        bool isInitialized;
-    }
-    
-    function poolStates(PoolId poolId) external view returns (PoolState memory);
-    function maintain(PoolId poolId, int24 newLower, int24 newUpper, uint256 volatility) external;
-}
+### Step 3: Set Maintainer (If Not Done by DeployAutomationFull)
 
-/// @title SentinelAutomation
-/// @notice Chainlink Automation compatible contract for Sentinel rebalancing
-contract SentinelAutomation is AutomationCompatibleInterface {
-    using StateLibrary for IPoolManager;
-
-    // ========== STATE ==========
-    ISentinelHook public immutable hook;
-    IPoolManager public immutable poolManager;
-    
-    // Tracked pools
-    PoolId[] public trackedPools;
-    mapping(PoolId => bool) public isTracked;
-    
-    // Configuration
-    uint256 public checkInterval = 60; // seconds between checks
-    uint256 public lastCheckTime;
-    int24 public defaultTickWidth = 600; // ~6% range
-    
-    // Owner
-    address public owner;
-
-    // ========== EVENTS ==========
-    event PoolAdded(PoolId indexed poolId);
-    event PoolRemoved(PoolId indexed poolId);
-    event RebalanceTriggered(PoolId indexed poolId, int24 newLower, int24 newUpper);
-
-    // ========== ERRORS ==========
-    error Unauthorized();
-    error PoolNotTracked();
-    error TooSoon();
-
-    // ========== CONSTRUCTOR ==========
-    constructor(address _hook, address _poolManager) {
-        hook = ISentinelHook(_hook);
-        poolManager = IPoolManager(_poolManager);
-        owner = msg.sender;
-        lastCheckTime = block.timestamp;
-    }
-
-    // ========== MODIFIERS ==========
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert Unauthorized();
-        _;
-    }
-
-    // ========== ADMIN FUNCTIONS ==========
-    function addPool(PoolId poolId) external onlyOwner {
-        if (!isTracked[poolId]) {
-            trackedPools.push(poolId);
-            isTracked[poolId] = true;
-            emit PoolAdded(poolId);
-        }
-    }
-
-    function removePool(PoolId poolId) external onlyOwner {
-        if (!isTracked[poolId]) revert PoolNotTracked();
-        isTracked[poolId] = false;
-        // Note: Does not remove from array, just marks as untracked
-        emit PoolRemoved(poolId);
-    }
-
-    function setCheckInterval(uint256 _interval) external onlyOwner {
-        checkInterval = _interval;
-    }
-
-    function setDefaultTickWidth(int24 _width) external onlyOwner {
-        defaultTickWidth = _width;
-    }
-
-    // ========== CHAINLINK AUTOMATION INTERFACE ==========
-    
-    /// @notice Called by Chainlink nodes to check if upkeep is needed
-    /// @dev Returns true if any tracked pool needs rebalancing
-    function checkUpkeep(bytes calldata /* checkData */)
-        external
-        view
-        override
-        returns (bool upkeepNeeded, bytes memory performData)
-    {
-        // Rate limiting
-        if (block.timestamp < lastCheckTime + checkInterval) {
-            return (false, "");
-        }
-
-        // Check each tracked pool
-        for (uint256 i = 0; i < trackedPools.length; i++) {
-            PoolId poolId = trackedPools[i];
-            if (!isTracked[poolId]) continue;
-
-            (bool needsRebalance, int24 newLower, int24 newUpper, uint256 volatility) = 
-                _checkPoolNeedsRebalance(poolId);
-
-            if (needsRebalance) {
-                performData = abi.encode(poolId, newLower, newUpper, volatility);
-                return (true, performData);
-            }
-        }
-
-        return (false, "");
-    }
-
-    /// @notice Called by Chainlink nodes to perform the upkeep
-    function performUpkeep(bytes calldata performData) external override {
-        (PoolId poolId, int24 newLower, int24 newUpper, uint256 volatility) = 
-            abi.decode(performData, (PoolId, int24, int24, uint256));
-
-        // Verify the pool still needs rebalancing (prevent frontrunning)
-        (bool stillNeeded, , , ) = _checkPoolNeedsRebalance(poolId);
-        if (!stillNeeded) return;
-
-        // Execute rebalance
-        hook.maintain(poolId, newLower, newUpper, volatility);
-        lastCheckTime = block.timestamp;
-
-        emit RebalanceTriggered(poolId, newLower, newUpper);
-    }
-
-    // ========== INTERNAL LOGIC ==========
-
-    /// @notice Check if a specific pool needs rebalancing
-    function _checkPoolNeedsRebalance(PoolId poolId)
-        internal
-        view
-        returns (bool needsRebalance, int24 newLower, int24 newUpper, uint256 volatility)
-    {
-        ISentinelHook.PoolState memory state = hook.poolStates(poolId);
-        if (!state.isInitialized) return (false, 0, 0, 0);
-
-        // Get current tick from pool
-        (uint160 sqrtPriceX96, int24 currentTick, , ) = poolManager.getSlot0(poolId);
-
-        // Safety Check: Is price outside active range?
-        bool outOfRange = currentTick < state.activeTickLower || 
-                          currentTick > state.activeTickUpper;
-
-        if (outOfRange) {
-            // URGENT: Rebalance immediately
-            newLower = _alignTick(currentTick - defaultTickWidth, 60);
-            newUpper = _alignTick(currentTick + defaultTickWidth, 60);
-            volatility = 1500; // Assume high volatility when out of range
-            return (true, newLower, newUpper, volatility);
-        }
-
-        // Optimization Check: Is price near edge of range?
-        int24 rangeWidth = state.activeTickUpper - state.activeTickLower;
-        int24 edgeThreshold = rangeWidth / 5; // 20% buffer
-
-        bool nearLowerEdge = (currentTick - state.activeTickLower) < edgeThreshold;
-        bool nearUpperEdge = (state.activeTickUpper - currentTick) < edgeThreshold;
-
-        if (nearLowerEdge || nearUpperEdge) {
-            // Optional: Trigger proactive rebalance
-            newLower = _alignTick(currentTick - defaultTickWidth, 60);
-            newUpper = _alignTick(currentTick + defaultTickWidth, 60);
-            volatility = 1000; // Medium volatility
-            return (true, newLower, newUpper, volatility);
-        }
-
-        return (false, 0, 0, 0);
-    }
-
-    /// @notice Align tick to spacing
-    function _alignTick(int24 tick, int24 spacing) internal pure returns (int24) {
-        return (tick / spacing) * spacing;
-    }
-
-    // ========== VIEW FUNCTIONS ==========
-
-    function getTrackedPoolCount() external view returns (uint256) {
-        return trackedPools.length;
-    }
-
-    function getPoolStatus(PoolId poolId) 
-        external 
-        view 
-        returns (
-            bool tracked,
-            bool needsRebalance,
-            int24 currentTick,
-            int24 activeLower,
-            int24 activeUpper
-        ) 
-    {
-        tracked = isTracked[poolId];
-        if (!tracked) return (false, false, 0, 0, 0);
-
-        ISentinelHook.PoolState memory state = hook.poolStates(poolId);
-        (, currentTick, , ) = poolManager.getSlot0(poolId);
-        activeLower = state.activeTickLower;
-        activeUpper = state.activeTickUpper;
-        
-        (needsRebalance, , , ) = _checkPoolNeedsRebalance(poolId);
-    }
-}
-```
-
----
-
-### Step 2: Deploy Script
-
-Create `script/DeploySentinelAutomation.s.sol`:
-
-```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
-
-import {Script} from "forge-std/Script.sol";
-import {SentinelAutomation} from "../src/automation/SentinelAutomation.sol";
-
-contract DeploySentinelAutomation is Script {
-    function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address hookAddress = vm.envAddress("SENTINEL_HOOK_ADDRESS");
-        address poolManagerAddress = vm.envAddress("POOL_MANAGER_ADDRESS");
-
-        vm.startBroadcast(deployerPrivateKey);
-        
-        SentinelAutomation automation = new SentinelAutomation(
-            hookAddress,
-            poolManagerAddress
-        );
-        
-        vm.stopBroadcast();
-
-        console.log("SentinelAutomation deployed at:", address(automation));
-    }
-}
-```
-
----
-
-### Step 3: Register with Chainlink Automation
-
-#### Option A: Chainlink Automation UI (Recommended for Hackathons)
-
-1. **Go to**: https://automation.chain.link/
-2. **Connect Wallet**: Use the deployer wallet
-3. **Register New Upkeep**:
-   - **Trigger**: Custom Logic
-   - **Target Contract**: `SentinelAutomation` address
-   - **Gas Limit**: 500,000
-   - **Starting Balance**: 5 LINK (testnet)
-4. **Fund the Upkeep** with LINK tokens
-
-#### Option B: Programmatic Registration
-
-```solidity
-// In your deploy script:
-IAutomationRegistrar registrar = IAutomationRegistrar(REGISTRAR_ADDRESS);
-
-RegistrationParams memory params = RegistrationParams({
-    name: "Sentinel Rebalancer",
-    encryptedEmail: "",
-    upkeepContract: address(automation),
-    gasLimit: 500000,
-    adminAddress: msg.sender,
-    triggerType: 0, // Conditional
-    checkData: "",
-    triggerConfig: "",
-    offchainConfig: "",
-    amount: 5 ether // 5 LINK
-});
-
-registrar.registerUpkeep(params);
-```
-
----
-
-### Step 4: Configure the Hook
-
-After deploying, set the automation contract as the maintainer:
-
-```solidity
-// Call on SentinelHook:
-hook.setMaintainer(address(sentinelAutomation));
-```
+- Call `SentinelHook.setMaintainer(automationAddress)`.
 
 ---
 

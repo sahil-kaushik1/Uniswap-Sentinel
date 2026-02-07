@@ -1,6 +1,6 @@
 # Sentinel Deployment Guide
 
-This guide covers deploying contracts, automation, and the optional Azure agent, plus frontend wiring.
+This guide covers deploying contracts, Chainlink automation, and frontend wiring.
 
 ---
 
@@ -29,25 +29,23 @@ Optional:
 
 ## 3) Deploy Contracts (Sepolia)
 
-### Option A — MAIN: Full Demo + Automation
+### Option A — MAIN: Full Demo Deploy (Mock Everything)
 
 ```
 forge script script/DeployAll.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
 ```
 
-This deploys the hook, pools, and automation in one pass.
+This deploys mock tokens, mock Aave, the hook, pools, seeds liquidity, and writes `deployment.json`.
 
-### Option B — Full Demo (mock tokens + mock Aave + pools)
+### Optional: Controlled Mock Price Feeds
 
-```
-forge script script/DeployFullDemo.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
-```
+If you want deterministic oracle prices for demo/agent testing, set:
 
-This emits addresses and pool IDs. Save them in [DEPLOYMENT.md](../DEPLOYMENT.md) and update:
-- [frontend/src/lib/addresses.ts](../frontend/src/lib/addresses.ts)
-- [azure-agent/.env.example](../azure-agent/.env.example) (if using the agent)
+- `USE_MOCK_FEEDS=true`
 
-### Option C — Production-style Deploy (no mocks)
+This deploys [src/mocks/MockPriceFeed.sol](../src/mocks/MockPriceFeed.sol) and wires pools to the mock feeds. You can then update prices on-chain by calling `setPrice()` or `setRoundData()`.
+
+### Option B — Production-style Deploy (no mocks)
 
 ```
 forge script script/DeploySentinel.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
@@ -59,7 +57,7 @@ forge script script/DeploySentinel.s.sol --account test1 --rpc-url $SEPOLIA_RPC_
 
 ### Option A — Chainlink Automation + Functions
 
-Deploy the automation contract and register pools:
+Deploy the automation contract and register pools (reads `deployment.json`):
 
 ```
 forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
@@ -71,32 +69,33 @@ Post-deploy (UI):
 
 Reference: [docs/chainlink_automate.md](./chainlink_automate.md)
 
-### Option B — Azure Agent (off-chain maintainer)
+**Env:**
+- `USE_FUNCTIONS=true`
+- `CL_FUNCTIONS_ROUTER`
+- `CL_DON_ID`
+- `CL_SUB_ID`
+- `CL_GAS_LIMIT`
+- `DEPLOYMENT_JSON` (optional; defaults to `deployment.json`)
 
-Use the off-chain agent to call `SentinelHook.maintain()`.
+### Option B (Cheapest) — Chainlink Automation Only
 
-1) Configure env:
+Skip Functions to reduce LINK costs. Set:
 
-- Copy [azure-agent/.env.example](../azure-agent/.env.example) → `.env`
-- Set `RPC_URL`, `WS_RPC_URL`, `PRIVATE_KEY`, `HOOK_ADDRESS`, `POOL_MANAGER_ADDRESS`, and `POOLS`
+- `USE_FUNCTIONS=false`
+- `POOL_MANAGER` (for on‑chain tick reads)
 
-2) Run locally:
+Then deploy automation with:
 
 ```
-cd azure-agent
-npm install
-npm start
+forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
 ```
-
-3) Deploy to Azure:
-
-See [azure-agent/README.md](../azure-agent/README.md) for Container Apps / Web App steps.
 
 ---
 
 ## 5) Frontend Setup
 
 1) Update addresses in [frontend/src/lib/addresses.ts](../frontend/src/lib/addresses.ts).
+	- Or run `node update_addresses.js` after DeployAll to auto-fill from `deployment.json`.
 2) (Optional) Create `frontend/.env`:
 
 ```
@@ -122,15 +121,14 @@ Use this after changes or before demo:
 - `forge test --match-path "test/fuzz/*.t.sol"`
 - `forge test --match-path "test/integration/*.t.sol" --fork-url $SEPOLIA_RPC_URL -vvv`
 - `npm -C frontend run dev`
-- `npm -C azure-agent start`
 
 ---
 
 ## 7) Troubleshooting
 
-- **Revert: BALANCE on seed** → the deployer wallet may not hold the required mock tokens or decimals mismatched; re-run DeployFullDemo or reduce seed amounts.
+- **Revert: BALANCE on seed** → the deployer wallet may not hold the required mock tokens or decimals mismatched; re-run DeployAll or reduce seed amounts.
 - **Frontend ENOENT** → ensure you run npm commands from `frontend/`.
-- **Agent not triggering** → ensure `WS_RPC_URL` is set and `ENABLE_EVENT_LISTENER=true`.
+- **Automation not triggering** → verify upkeep registration and LINK funding on automation.chain.link.
 
 ---
 
@@ -139,4 +137,4 @@ Use this after changes or before demo:
 - [DEPLOYMENT.md](../DEPLOYMENT.md)
 - [docs/tech_stack.md](./tech_stack.md)
 - [docs/reactive_strategy.md](./reactive_strategy.md)
-- [azure-agent/README.md](../azure-agent/README.md)
+

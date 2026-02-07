@@ -141,11 +141,11 @@ sentinel-protocol/
 │   └── mocks/                    # MockERC20, MockAavePool, MockOracle, etc.
 │
 ├── script/                        # Deployment Scripts
-│   ├── DeployFullDemo.s.sol      # Full Sepolia deploy (tokens, Aave, hook, pools)
+│   ├── DeployAll.s.sol           # Full demo deploy (mocks + pools + seeds + JSON)
 │   ├── DeploySentinel.s.sol      # Production-style deploy
 │   ├── DeployAutomationFull.s.sol # All-in-one automation deploy + pool registration
 │   ├── DeploySentinelAutomation.s.sol # Automation contract deploy (standalone)
-│   └── DeployMockEnvironment.s.sol
+│
 │
 ├── frontend/                      # React Frontend (Vite + wagmi + shadcn/ui)
 │   └── src/
@@ -208,15 +208,15 @@ forge test --gas-report
 ### Deployment
 
 ```bash
-# MAIN: Full deploy (demo + automation) on Sepolia
+# MAIN: Full demo deploy (mock tokens, mock Aave, pools, seeds) on Sepolia
 forge script script/DeployAll.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
-
-# Demo-only deploy (mock tokens, Aave, hook, pools)
-forge script script/DeployFullDemo.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
 
 # Verify on Etherscan
 forge verify-contract <ADDRESS> SentinelHook --chain sepolia
 ```
+
+For deterministic demos, set `USE_MOCK_FEEDS=true` before running DeployAll.
+DeployAll also writes `deployment.json`; run `node update_addresses.js` to sync the frontend.
 
 Optional env var for hook deployment:
 
@@ -232,12 +232,12 @@ forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLI
 Required env vars for automation (in `.env`):
 
 - `SEPOLIA_RPC_URL` — Alchemy/Infura Sepolia endpoint
-- `SENTINEL_HOOK_ADDRESS` — Deployed SentinelHook address
 - `CL_FUNCTIONS_ROUTER` — `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` (Sepolia)
 - `CL_DON_ID` — `fun-ethereum-sepolia-1`
 - `CL_SUB_ID` — Chainlink Functions subscription ID
 - `CL_GAS_LIMIT` — e.g. `300000`
 - `CL_FUNCTIONS_SOURCE` (optional — reads from `src/automation/functions/rebalancer.js`)
+ - `DEPLOYMENT_JSON` (optional — defaults to `deployment.json` from `DeployAll`)
 
 Post-deploy Chainlink UI steps:
 1. **Register Automation Upkeep** at [automation.chain.link](https://automation.chain.link/) → Custom Logic → paste SentinelAutomation address → fund with LINK
@@ -254,43 +254,43 @@ All contracts are **deployed and verified** on Sepolia. View on [Etherscan](http
 | Contract | Address | Status |
 |----------|---------|--------|
 | **Uniswap PoolManager** | [`0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A`](https://sepolia.etherscan.io/address/0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A) | Canonical |
-| **SentinelHook** | [`0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080`](https://sepolia.etherscan.io/address/0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080#code) | ✅ Verified |
-| **SwapHelper** | [`0xFE9047BaA04072Caf988Ee11160585952828866f`](https://sepolia.etherscan.io/address/0xFE9047BaA04072Caf988Ee11160585952828866f#code) | ✅ Verified |
-| **SentinelAutomation** | [`0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85`](https://sepolia.etherscan.io/address/0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85#code) | ✅ Verified |
-| **MockAave** | [`0x5D1359bC5442bA7dA9821E2FDee4d277730451D5`](https://sepolia.etherscan.io/address/0x5D1359bC5442bA7dA9821E2FDee4d277730451D5) | Deployed |
+| **SentinelHook** | [`0xC4C486Ab67d6e1bceA5DF14eBE2393EEBa0a6080`](https://sepolia.etherscan.io/address/0xC4C486Ab67d6e1bceA5DF14eBE2393EEBa0a6080#code) | ✅ Verified |
+| **SwapHelper** | [`0x176F75Dc4B71FB1f3808A789Fd36a94aE343836f`](https://sepolia.etherscan.io/address/0x176F75Dc4B71FB1f3808A789Fd36a94aE343836f#code) | ✅ Verified |
+| **SentinelAutomation** | Deployed via DeployAutomationFull | — |
+| **MockAave** | [`0xDDfDfD8b5313BcB7B2c60a604AC777F806747D31`](https://sepolia.etherscan.io/address/0xDDfDfD8b5313BcB7B2c60a604AC777F806747D31) | Deployed |
 
 ### Mock Tokens
 
 | Token | Address |
 |-------|--------|
-| **mETH** (Mock WETH) | [`0x728cAd9d02119FbD637279079B063A58F5DC39b8`](https://sepolia.etherscan.io/address/0x728cAd9d02119FbD637279079B063A58F5DC39b8) |
-| **mUSDC** | [`0xc5bFb66e99EcA697a5Cb914390e02579597d45f9`](https://sepolia.etherscan.io/address/0xc5bFb66e99EcA697a5Cb914390e02579597d45f9) |
-| **mWBTC** | [`0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA`](https://sepolia.etherscan.io/address/0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA) |
-| **mUSDT** | [`0x757532BDebcf3568fDa48aD7dea78B5644D70E41`](https://sepolia.etherscan.io/address/0x757532BDebcf3568fDa48aD7dea78B5644D70E41) |
+| **mETH** (Mock WETH) | [`0x7f2F5eC740c31012eC5b9a0c6fC03805A3250baE`](https://sepolia.etherscan.io/address/0x7f2F5eC740c31012eC5b9a0c6fC03805A3250baE) |
+| **mUSDC** | [`0xF8753428B6071Bf98e4cE6340EC1dD2b70d80737`](https://sepolia.etherscan.io/address/0xF8753428B6071Bf98e4cE6340EC1dD2b70d80737) |
+| **mWBTC** | [`0xD67a91a2f99e9D4C66d6E1497A5659e2d336E2e3`](https://sepolia.etherscan.io/address/0xD67a91a2f99e9D4C66d6E1497A5659e2d336E2e3) |
+| **mUSDT** | [`0xd6dF30701Ec33C78077D871e82f70287C79B3A0a`](https://sepolia.etherscan.io/address/0xd6dF30701Ec33C78077D871e82f70287C79B3A0a) |
 
 ### Aave aTokens (Mock)
 
 | aToken | Address | Underlying |
 |--------|---------|------------|
-| **maETH** | `0x8beCc1B30084d0404b79bdDb5dB4F30f56c67C95` | mETH |
-| **maUSDC** | `0xfE5080cA75Af4612F31f39107d7E8782D644bf80` | mUSDC |
-| **maWBTC** | `0x6648c432Fa3Cf44681FdCaE58e7A1174b11c70b2` | mWBTC |
-| **maUSDT** | `0x85284b6EF7e443A27b54BC6914befdD2f2A6c61A` | mUSDT |
+| **maETH** | `0x0a0Dea09406f50726C22913472A23ED38175e93b` | mETH |
+| **maUSDC** | `0xA269315eA368CE2d5b9bca44aD58e1BD500ad878` | mUSDC |
+| **maWBTC** | `0x3cCf46C7c3D05F28be5D026b3301A3998FcDD5AB` | mWBTC |
+| **maUSDT** | `0x9eEf8d21C2db1Be765B5D8D8300E1ef6Ee14Db98` | mUSDT |
 
 ### Deployed Pools (3 Active)
 
 | Pool | Pool ID | Oracle |
 |------|---------|--------|
-| **mUSDC/mETH** | `0x90b5f4...d8b` | ETH/USD |
-| **mWBTC/mETH** | `0xe42287...d9c` | BTC/ETH (Ratio) |
-| **mUSDT/mETH** | `0x3d41b4...bd69` | ETH/USD |
+| **mUSDC/mETH** | `0x359533...63a` | ETH/USD |
+| **mWBTC/mETH** | `0x44db17...9aed` | BTC/ETH (Ratio) |
+| **mUSDT/mETH** | `0xe13f34...0480` | ETH/USD |
 
 ### Chainlink Integration
 
 | Component | Details |
 |-----------|--------|
-| **Automation Upkeep** | "hackmoney-1" — Active, 5 LINK funded, gas limit 500,000 |
-| **Functions Subscription** | #6243 — 7 LINK funded, consumer added |
+| **Automation Upkeep** | Register via automation.chain.link |
+| **Functions Subscription** | Your subscription ID |
 | **DON ID** | `fun-ethereum-sepolia-1` |
 | **Functions Router** | `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` |
 
