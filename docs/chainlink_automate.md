@@ -50,7 +50,10 @@ sequenceDiagram
 
 ## Deployment
 
-Use the deployment script [script/DeploySentinelAutomation.s.sol](script/DeploySentinelAutomation.s.sol).
+Use one of the following scripts:
+
+- **Main deploy (demo + automation):** [script/DeployAll.s.sol](script/DeployAll.s.sol)
+- **Automation-only deploy:** [script/DeployAutomationFull.s.sol](script/DeployAutomationFull.s.sol)
 
 **Required env vars**:
 
@@ -66,7 +69,7 @@ Use the deployment script [script/DeploySentinelAutomation.s.sol](script/DeployS
 
 Run the script to deploy the automation contract and print next steps:
 
-- Script: [script/DeploySentinelAutomation.s.sol](script/DeploySentinelAutomation.s.sol)
+- Script: [script/DeployAutomationFull.s.sol](script/DeployAutomationFull.s.sol)
 
 ### Register Pools
 
@@ -172,6 +175,16 @@ sequenceDiagram
 ---
 
 ## Implementation Guide
+
+## Offchain Runner (No Chainlink)
+
+If you want a fully offchain loop that directly calls `SentinelHook.maintain()` (great for demos and free hosting), use the Azure agent in [azure-agent/README.md](../azure-agent/README.md).
+
+Summary:
+
+- Configure `azure-agent/.env` (hook address, private key, pools).
+- Run `npm start` in [azure-agent](../azure-agent).
+- Optional: `DRY_RUN=true` to validate without transactions.
 
 ### Step 1: Deploy the Automation Contract
 

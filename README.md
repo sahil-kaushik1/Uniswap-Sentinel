@@ -208,7 +208,10 @@ forge test --gas-report
 ### Deployment
 
 ```bash
-# Deploy full demo to Sepolia (mock tokens, Aave, oracle, hook, pools)
+# MAIN: Full deploy (demo + automation) on Sepolia
+forge script script/DeployAll.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
+
+# Demo-only deploy (mock tokens, Aave, hook, pools)
 forge script script/DeployFullDemo.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
 
 # Verify on Etherscan
@@ -251,43 +254,43 @@ All contracts are **deployed and verified** on Sepolia. View on [Etherscan](http
 | Contract | Address | Status |
 |----------|---------|--------|
 | **Uniswap PoolManager** | [`0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A`](https://sepolia.etherscan.io/address/0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A) | Canonical |
-| **SentinelHook** | [`0x386bc633421dD0416E357ae1c34177568dA52080`](https://sepolia.etherscan.io/address/0x386bc633421dD0416E357ae1c34177568dA52080#code) | ✅ Verified |
-| **SwapHelper** | [`0x8B6e80F6b28b07b16E532A647d00c64bDb6c29d8`](https://sepolia.etherscan.io/address/0x8B6e80F6b28b07b16E532A647d00c64bDb6c29d8#code) | ✅ Verified |
-| **SentinelAutomation** | [`0xa0ce362C6D2D482d7147E6a1F98706eA9Ac82Ffb`](https://sepolia.etherscan.io/address/0xa0ce362C6D2D482d7147E6a1F98706eA9Ac82Ffb#code) | ✅ Verified |
-| **MockAave** | [`0x5e541e338E73BCdAD9cD4F61cd6DD4e6434B214e`](https://sepolia.etherscan.io/address/0x5e541e338E73BCdAD9cD4F61cd6DD4e6434B214e) | Deployed |
+| **SentinelHook** | [`0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080`](https://sepolia.etherscan.io/address/0x8ba4d5c59748D6AA896fa32a64D51C4fef3b6080#code) | ✅ Verified |
+| **SwapHelper** | [`0xFE9047BaA04072Caf988Ee11160585952828866f`](https://sepolia.etherscan.io/address/0xFE9047BaA04072Caf988Ee11160585952828866f#code) | ✅ Verified |
+| **SentinelAutomation** | [`0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85`](https://sepolia.etherscan.io/address/0xc3aD45d5feC747B5465783c301580BfC4A1Bcd85#code) | ✅ Verified |
+| **MockAave** | [`0x5D1359bC5442bA7dA9821E2FDee4d277730451D5`](https://sepolia.etherscan.io/address/0x5D1359bC5442bA7dA9821E2FDee4d277730451D5) | Deployed |
 
 ### Mock Tokens
 
 | Token | Address |
 |-------|--------|
-| **mETH** (Mock WETH) | [`0xbb8Db005968AD75dc1521c61a2bAC6e7CB5C42d5`](https://sepolia.etherscan.io/address/0xbb8Db005968AD75dc1521c61a2bAC6e7CB5C42d5) |
-| **mUSDC** | [`0xaA19cF38Ec024e47542e0aFfb029784486317d3A`](https://sepolia.etherscan.io/address/0xaA19cF38Ec024e47542e0aFfb029784486317d3A) |
-| **mWBTC** | [`0xb75fDB4A4b685429447B54972e089e1c9b239fCF`](https://sepolia.etherscan.io/address/0xb75fDB4A4b685429447B54972e089e1c9b239fCF) |
-| **mUSDT** | [`0x19180e57e6640f9A51dEF8c8a7137c78e75704D2`](https://sepolia.etherscan.io/address/0x19180e57e6640f9A51dEF8c8a7137c78e75704D2) |
+| **mETH** (Mock WETH) | [`0x728cAd9d02119FbD637279079B063A58F5DC39b8`](https://sepolia.etherscan.io/address/0x728cAd9d02119FbD637279079B063A58F5DC39b8) |
+| **mUSDC** | [`0xc5bFb66e99EcA697a5Cb914390e02579597d45f9`](https://sepolia.etherscan.io/address/0xc5bFb66e99EcA697a5Cb914390e02579597d45f9) |
+| **mWBTC** | [`0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA`](https://sepolia.etherscan.io/address/0xE9c7d8b803e38a22b26c8eE618203A433ADD8AfA) |
+| **mUSDT** | [`0x757532BDebcf3568fDa48aD7dea78B5644D70E41`](https://sepolia.etherscan.io/address/0x757532BDebcf3568fDa48aD7dea78B5644D70E41) |
 
 ### Aave aTokens (Mock)
 
 | aToken | Address | Underlying |
 |--------|---------|------------|
-| **maETH** | `0xE7F85Ee92dd51bbAB76700DF0198C366c2F9D07B` | mETH |
-| **maUSDC** | `0x2b9a68fa35bb2F6f88E90FB68265315B9dc8fb03` | mUSDC |
-| **maWBTC** | `0x049Ad2fc1b7d105C6c7502Cd1E1EF8af74c59139` | mWBTC |
-| **maUSDT** | `0x4197Aa46167911C3Ed87d023C0B704e597be8989` | mUSDT |
+| **maETH** | `0x8beCc1B30084d0404b79bdDb5dB4F30f56c67C95` | mETH |
+| **maUSDC** | `0xfE5080cA75Af4612F31f39107d7E8782D644bf80` | mUSDC |
+| **maWBTC** | `0x6648c432Fa3Cf44681FdCaE58e7A1174b11c70b2` | mWBTC |
+| **maUSDT** | `0x85284b6EF7e443A27b54BC6914befdD2f2A6c61A` | mUSDT |
 
 ### Deployed Pools (3 Active)
 
 | Pool | Pool ID | Oracle |
 |------|---------|--------|
-| **mUSDC/mETH** | `0xebd975...eb8f5` | ETH/USD |
-| **mWBTC/mETH** | `0xb86d98...9266` | BTC/ETH (Ratio) |
-| **mUSDT/mETH** | `0x42cc36...d3d6` | ETH/USD |
+| **mUSDC/mETH** | `0x90b5f4...d8b` | ETH/USD |
+| **mWBTC/mETH** | `0xe42287...d9c` | BTC/ETH (Ratio) |
+| **mUSDT/mETH** | `0x3d41b4...bd69` | ETH/USD |
 
 ### Chainlink Integration
 
 | Component | Details |
 |-----------|--------|
 | **Automation Upkeep** | "hackmoney-1" — Active, 5 LINK funded, gas limit 500,000 |
-| **Functions Subscription** | #6244 — 7 LINK funded, consumer added |
+| **Functions Subscription** | #6243 — 7 LINK funded, consumer added |
 | **DON ID** | `fun-ethereum-sepolia-1` |
 | **Functions Router** | `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` |
 
@@ -393,6 +396,7 @@ npm run dev     # http://localhost:5173
 |----------|---------|
 | **[agents.md](./agents.md)** | 🤖 AI Agent context - START HERE |
 | **[VISUAL_GUIDE.md](./VISUAL_GUIDE.md)** | 📊 Diagrams and flow charts |
+| **[docs/deployment_guide.md](./docs/deployment_guide.md)** | 🚀 End-to-end deployment guide |
 | **[docs/chainlink_automate.md](./docs/chainlink_automate.md)** | ⚙️ Chainlink Automation reference |
 | **[docs/tech_stack.md](./docs/tech_stack.md)** | 📚 Technology deep dive |
 
