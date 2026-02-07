@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react"
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi"
 import { parseUnits } from "viem"
 import { useQueryClient } from "@tanstack/react-query"
-import { sentinelHookAbi, erc20Abi } from "@/lib/abi"
+import { sentinelHookAbi, erc20Abi, aggregatorV3Abi } from "@/lib/abi"
 import { SENTINEL_HOOK_ADDRESS, TOKENS, type PoolConfig } from "@/lib/addresses"
 import { useTokenBalance, useTokenAllowance } from "@/hooks/use-tokens"
 import {
@@ -32,11 +32,55 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
   const [amount0, setAmount0] = useState("")
   const [amount1, setAmount1] = useState("")
   const [step, setStep] = useState<"input" | "approve0" | "approve1" | "deposit" | "done">("input")
+  const [editingToken, setEditingToken] = useState<0 | 1>(0) // Track which token user is editing
 
   const token0 = TOKENS[pool.token0Symbol]
   const token1 = TOKENS[pool.token1Symbol]
   const token0Addr = token0.address as `0x${string}`
   const token1Addr = token1.address as `0x${string}`
+
+  // Fetch pool state (includes price feed config)
+  const { data: poolState } = useReadContract({
+    address: hookAddress,
+    abi: sentinelHookAbi,
+    functionName: "getPoolState",
+    args: [pool.id],
+  })
+
+  const priceFeed = (poolState as { priceFeed?: `0x${string}` })?.priceFeed ?? (poolState as any)?.[3]
+  const priceFeedInverted = (poolState as { priceFeedInverted?: boolean })?.priceFeedInverted ?? (poolState as any)?.[4]
+
+  const zeroAddress = "0x0000000000000000000000000000000000000000"
+
+  const { data: feedDecimals } = useReadContract({
+    address: priceFeed as `0x${string}`,
+    abi: aggregatorV3Abi,
+    functionName: "decimals",
+    query: { enabled: !!priceFeed && priceFeed !== zeroAddress },
+  })
+
+  const { data: feedRoundData } = useReadContract({
+    address: priceFeed as `0x${string}`,
+    abi: aggregatorV3Abi,
+    functionName: "latestRoundData",
+    query: { enabled: !!priceFeed && priceFeed !== zeroAddress },
+  })
+
+  const priceX18 = (() => {
+    if (!feedRoundData || feedDecimals === undefined) return 0n
+    const answerRaw = (feedRoundData as any).answer ?? (feedRoundData as any)[1]
+    if (answerRaw === undefined || answerRaw === null) return 0n
+    const answer = BigInt(answerRaw)
+    if (answer <= 0n) return 0n
+    const scale = 10n ** 18n
+    const feedScale = 10n ** BigInt(feedDecimals)
+    if (priceFeedInverted) {
+      return (scale * feedScale) / answer
+    }
+    return (scale * answer) / feedScale
+  })()
+
+  const price = priceX18 > 0n ? Number(priceX18) / 1e18 : null
 
   const { data: balance0 } = useTokenBalance(token0Addr)
   const { data: balance1 } = useTokenBalance(token1Addr)
@@ -45,6 +89,35 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
 
   const parsedAmount0 = amount0 ? parseUnits(amount0, token0.decimals) : 0n
   const parsedAmount1 = amount1 ? parseUnits(amount1, token1.decimals) : 0n
+
+  // Auto-calculate the other token amount based on ratio
+  useEffect(() => {
+    if (!price || step !== "input" || editingToken !== 0) return
+
+    if (amount0 && amount0 !== "") {
+      const amt0 = parseFloat(amount0)
+      if (!isNaN(amt0) && amt0 > 0) {
+        const amt1 = amt0 * price
+        setAmount1(amt1.toFixed(Math.min(token1.decimals, 6)))
+      }
+    } else {
+      setAmount1("")
+    }
+  }, [amount0, price, step, editingToken, token1.decimals])
+
+  useEffect(() => {
+    if (!price || step !== "input" || editingToken !== 1) return
+
+    if (amount1 && amount1 !== "") {
+      const amt1 = parseFloat(amount1)
+      if (!isNaN(amt1) && amt1 > 0) {
+        const amt0 = amt1 / price
+        setAmount0(amt0.toFixed(Math.min(token0.decimals, 6)))
+      }
+    } else {
+      setAmount0("")
+    }
+  }, [amount1, price, step, editingToken, token0.decimals])
 
   const needsApproval0 = parsedAmount0 > 0n && (allowance0 ?? 0n) < parsedAmount0
   const needsApproval1 = parsedAmount1 > 0n && (allowance1 ?? 0n) < parsedAmount1
@@ -201,6 +274,22 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
           </div>
         ) : (
           <>
+            {/* Price ratio info */}
+            {price && (
+              <div className="flex items-center justify-center gap-2 rounded-lg bg-muted/30 p-2">
+                <span className="text-xs text-muted-foreground">
+                  Current Price: 1 {token0.symbol} ≈ {price.toFixed(6)} {token1.symbol}
+                </span>
+              </div>
+            )}
+            {!price && (
+              <div className="flex items-center justify-center gap-2 rounded-lg bg-muted/30 p-2">
+                <span className="text-xs text-muted-foreground">
+                  Price unavailable (feed: {priceFeed ?? "n/a"}, inverted: {String(priceFeedInverted)})
+                </span>
+              </div>
+            )}
+
             {/* Token 0 Input */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -213,7 +302,10 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
                 <Input
                   placeholder="0.0"
                   value={amount0}
-                  onChange={(e) => setAmount0(e.target.value)}
+                  onChange={(e) => {
+                    setAmount0(e.target.value)
+                    setEditingToken(0)
+                  }}
                   className="bg-muted/30"
                   disabled={step !== "input"}
                 />
@@ -222,7 +314,10 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
                   size="sm"
                   className="text-xs"
                   onClick={() => {
-                    if (balance0) setAmount0(formatBalance(balance0, token0.decimals).replace(/,/g, ""))
+                    if (balance0) {
+                      setAmount0(formatBalance(balance0, token0.decimals).replace(/,/g, ""))
+                      setEditingToken(0)
+                    }
                   }}
                   disabled={step !== "input"}
                 >
@@ -243,7 +338,10 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
                 <Input
                   placeholder="0.0"
                   value={amount1}
-                  onChange={(e) => setAmount1(e.target.value)}
+                  onChange={(e) => {
+                    setAmount1(e.target.value)
+                    setEditingToken(1)
+                  }}
                   className="bg-muted/30"
                   disabled={step !== "input"}
                 />
@@ -252,7 +350,10 @@ export function DepositDialog({ pool, open, onOpenChange }: DepositDialogProps) 
                   size="sm"
                   className="text-xs"
                   onClick={() => {
-                    if (balance1) setAmount1(formatBalance(balance1, token1.decimals).replace(/,/g, ""))
+                    if (balance1) {
+                      setAmount1(formatBalance(balance1, token1.decimals).replace(/,/g, ""))
+                      setEditingToken(1)
+                    }
                   }}
                   disabled={step !== "input"}
                 >

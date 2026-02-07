@@ -60,9 +60,9 @@ export function PositionsPage() {
     return {
       pool: pool.name,
       config: pool,
-      shares: shares > 0n ? formatUnits(shares, 18) : "0",
+      shares: shares > 0n ? shares.toLocaleString() : "0",
       sharesRaw: shares,
-      value: value > 0n ? `$${Number(formatUnits(value, 18)).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "$0",
+      value: value > 0n ? value.toLocaleString() : "0",
       sharePrice: sharePrice > 0n ? Number(formatUnits(sharePrice, 18)).toFixed(4) : "1.0",
       status: !isInit ? "Not Deployed" : hasActive ? "In Range" : state!.totalShares > 0n ? "Idle" : "Empty",
       statusColor: !isInit ? "oklch(0.6 0.05 250)" : hasActive ? "oklch(0.72 0.19 155)" : "oklch(0.8 0.16 85)",
@@ -73,7 +73,7 @@ export function PositionsPage() {
 
   const positionsWithShares = positions.filter((p) => p.hasPosition)
   const totalValue = positionsWithShares.reduce((sum, p) => {
-    const val = Number(p.value.replace(/[$,]/g, ""))
+    const val = Number(p.value.replace(/[,]/g, ""))
     return sum + (isNaN(val) ? 0 : val)
   }, 0)
 
@@ -100,16 +100,16 @@ export function PositionsPage() {
             <Card className="border-border/30 bg-card/80">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Portfolio Value
+                  Portfolio Liquidity Units
                 </CardTitle>
                 <Wallet className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  {totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {positionsWithShares.length} active position{positionsWithShares.length !== 1 ? "s" : ""}
+                  Liquidity units across {positionsWithShares.length} position{positionsWithShares.length !== 1 ? "s" : ""}
                 </p>
               </CardContent>
             </Card>
@@ -169,7 +169,7 @@ export function PositionsPage() {
                   <TableRow className="border-border/30 hover:bg-transparent">
                     <TableHead>Pool</TableHead>
                     <TableHead>Shares</TableHead>
-                    <TableHead>Value</TableHead>
+                    <TableHead>Liquidity Units</TableHead>
                     <TableHead>Share Price</TableHead>
                     <TableHead>Active / Idle</TableHead>
                     <TableHead>Status</TableHead>
@@ -184,7 +184,7 @@ export function PositionsPage() {
                     >
                       <TableCell className="font-semibold">{pos.pool}</TableCell>
                       <TableCell className="font-mono text-muted-foreground text-sm">
-                        {Number(pos.shares).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                        {pos.shares}
                       </TableCell>
                       <TableCell>{pos.value}</TableCell>
                       <TableCell className="font-mono text-sm">{pos.sharePrice}</TableCell>
@@ -262,11 +262,11 @@ export function PositionsPage() {
                       <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
                         <p className="text-xs text-muted-foreground">Your Shares</p>
                         <p className="mt-1 text-lg font-bold text-[oklch(0.65_0.25_290)]">
-                          {Number(pos.shares).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          {pos.shares}
                         </p>
                       </div>
                       <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Share Value</p>
+                        <p className="text-xs text-muted-foreground">Share Units</p>
                         <p className="mt-1 text-lg font-bold text-[oklch(0.75_0.15_195)]">
                           {pos.value}
                         </p>

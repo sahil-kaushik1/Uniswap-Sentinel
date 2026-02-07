@@ -7,28 +7,6 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {AutomationCompatibleInterface} from "foundry-chainlink-toolkit/lib/chainlink-brownie-contracts/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
 
 // ============================================================================
-// CHAINLINK INTERFACES
-// ============================================================================
-
-interface IFunctionsRouter {
-    function sendRequest(
-        uint64 subscriptionId,
-        bytes calldata data,
-        uint16 dataVersion,
-        uint32 callbackGasLimit,
-        bytes32 donId
-    ) external returns (bytes32 requestId);
-}
-
-interface IFunctionsClient {
-    function handleOracleFulfillment(
-        bytes32 requestId,
-        bytes memory response,
-        bytes memory err
-    ) external;
-}
-
-// ============================================================================
 // SENTINEL HOOK INTERFACE
 // ============================================================================
 
@@ -79,8 +57,8 @@ interface ISentinelHook {
 // ============================================================================
 
 /// @title SentinelAutomation
-/// @notice Chainlink Automation + Functions for 3 pools: ETH/USDC, WBTC/ETH, ETH/USDT
-contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
+/// @notice Chainlink Automation for 3 pools: ETH/USDC, WBTC/ETH, ETH/USDT
+contract SentinelAutomation is AutomationCompatibleInterface {
     // ========== CONSTANTS ==========
     uint8 public constant MAX_POOLS = 3;
 
@@ -92,8 +70,6 @@ contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
     // ========== STATE ==========
     ISentinelHook public immutable hook;
     IPoolManager public immutable poolManager;
-    IFunctionsRouter public immutable router;
-    bool public useFunctions;
     address public owner;
 
     // Pool Configuration
@@ -105,53 +81,24 @@ contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
     PoolConfig[3] public pools;
     uint8 public poolCount;
 
-    // Chainlink Functions Config
-    bytes32 public donId;
-    uint64 public subscriptionId;
-    uint32 public gasLimit;
-    string public source;
-
-    // Request tracking
-    bytes32 public lastRequestId;
-    uint8 public pendingPoolIndex;
-    bool public requestPending;
     uint8 public lastCheckedPool;
 
     // ========== EVENTS ==========
     event PoolAdded(uint8 indexed index, uint8 poolType, PoolId poolId);
-    event RebalanceRequested(bytes32 indexed requestId, uint8 poolIndex);
     event RebalanceExecuted(
         uint8 indexed poolIndex,
         int24 newLower,
         int24 newUpper
     );
-    event RequestFailed(bytes32 indexed requestId, string reason);
 
     // ========== ERRORS ==========
     error Unauthorized();
-    error RequestAlreadyPending();
-    error OnlyRouter();
     error MaxPoolsReached();
 
     // ========== CONSTRUCTOR ==========
-    constructor(
-        address _hook,
-        address _poolManager,
-        address _router,
-        bytes32 _donId,
-        uint64 _subscriptionId,
-        uint32 _gasLimit,
-        string memory _source,
-        bool _useFunctions
-    ) {
+    constructor(address _hook, address _poolManager) {
         hook = ISentinelHook(_hook);
         poolManager = IPoolManager(_poolManager);
-        router = IFunctionsRouter(_router);
-        donId = _donId;
-        subscriptionId = _subscriptionId;
-        gasLimit = _gasLimit;
-        source = _source;
-        useFunctions = _useFunctions;
         owner = msg.sender;
     }
 
@@ -180,7 +127,7 @@ contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
     function checkUpkeep(
         bytes calldata
     ) external returns (bool upkeepNeeded, bytes memory performData) {
-        if (requestPending || poolCount == 0) return (false, "");
+        if (poolCount == 0) return (false, "");
 
         // Round-robin: check next pool after lastCheckedPool
         for (uint8 i = 0; i < poolCount; i++) {
@@ -193,10 +140,6 @@ contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
                 .poolStates(pools[idx].poolId);
             if (!isInit) continue;
 
-            if (useFunctions) {
-                return (true, abi.encode(idx));
-            }
-
             if (_needsRebalance(pools[idx].poolId)) {
                 return (true, abi.encode(idx));
             }
@@ -208,71 +151,20 @@ contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
     /// @notice Sends request to Chainlink Functions for specific pool
     function performUpkeep(bytes calldata performData) external {
         if (performData.length == 0) return;
-        if (requestPending) revert RequestAlreadyPending();
 
         uint8 poolIndex = abi.decode(performData, (uint8));
         if (poolIndex >= poolCount) return;
         PoolConfig memory pool = pools[poolIndex];
         if (!pool.active) return;
 
-        if (!useFunctions) {
-            (bool shouldRebalance, int24 newLower, int24 newUpper, uint256 volatility) =
-                _computeRebalance(pool.poolId);
-
-            if (!shouldRebalance) return;
-
-            hook.maintain(pool.poolId, newLower, newUpper, volatility);
-            lastCheckedPool = poolIndex;
-            emit RebalanceExecuted(poolIndex, newLower, newUpper);
-            return;
-        }
-
-        // Build request with pool info
-        bytes memory request = _buildRequest(pool.poolType);
-
-        lastRequestId = router.sendRequest(
-            subscriptionId,
-            request,
-            1,
-            gasLimit,
-            donId
-        );
-
-        pendingPoolIndex = poolIndex;
-        requestPending = true;
         lastCheckedPool = poolIndex;
 
-        emit RebalanceRequested(lastRequestId, poolIndex);
-    }
+        (bool shouldRebalance, int24 newLower, int24 newUpper, uint256 volatility) =
+            _computeRebalance(pool.poolId);
 
-    // ========== CHAINLINK FUNCTIONS CALLBACK ==========
+        if (!shouldRebalance) return;
 
-    function handleOracleFulfillment(
-        bytes32 requestId,
-        bytes memory response,
-        bytes memory err
-    ) external override {
-        if (!useFunctions) revert OnlyRouter();
-        if (msg.sender != address(router)) revert OnlyRouter();
-
-        uint8 poolIndex = pendingPoolIndex;
-        requestPending = false;
-
-        if (err.length > 0) {
-            emit RequestFailed(requestId, string(err));
-            return;
-        }
-
-        // Decode response
-        (int24 newLower, int24 newUpper, uint256 volatility) = _decodeResponse(
-            response
-        );
-
-        if (newLower == 0 && newUpper == 0) return;
-
-        // Execute rebalance for this pool
-        hook.maintain(pools[poolIndex].poolId, newLower, newUpper, volatility);
-
+        hook.maintain(pool.poolId, newLower, newUpper, volatility);
         emit RebalanceExecuted(poolIndex, newLower, newUpper);
     }
 
@@ -281,24 +173,6 @@ contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
     modifier onlyOwner() {
         if (msg.sender != owner) revert Unauthorized();
         _;
-    }
-
-    function setSource(string calldata _source) external onlyOwner {
-        source = _source;
-    }
-
-    function setConfig(
-        bytes32 _donId,
-        uint64 _subId,
-        uint32 _gasLimit
-    ) external onlyOwner {
-        donId = _donId;
-        subscriptionId = _subId;
-        gasLimit = _gasLimit;
-    }
-
-    function setUseFunctions(bool _useFunctions) external onlyOwner {
-        useFunctions = _useFunctions;
     }
 
     // ========== VIEW ==========
@@ -313,85 +187,18 @@ contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
 
     // ========== INTERNAL ==========
 
-    function _buildRequest(
-        uint8 poolType
-    ) internal view returns (bytes memory) {
-        bytes memory sourceBytes = bytes(source);
-        bytes memory poolTypeArg = abi.encodePacked(poolType);
-
-        // CBOR with source and args
-        return
-            abi.encodePacked(
-                bytes1(0xa2), // Map with 2 elements
-                bytes1(0x00), // Key: 0 (source)
-                bytes1(0x78),
-                uint8(sourceBytes.length > 255 ? 255 : sourceBytes.length),
-                sourceBytes,
-                bytes1(0x01), // Key: 1 (args)
-                bytes1(0x81), // Array of 1 element
-                bytes1(0x00 + poolType) // Pool type as integer
-            );
-    }
-
-    function _decodeResponse(
-        bytes memory response
-    ) internal pure returns (int24, int24, uint256) {
-        string memory resp = string(response);
-        int24 newLower = _extractInt24(resp, "newLower");
-        int24 newUpper = _extractInt24(resp, "newUpper");
-        uint256 volatility = uint256(
-            int256(_extractInt24(resp, "volatilityBps"))
-        );
-        return (newLower, newUpper, volatility);
-    }
-
-    function _extractInt24(
-        string memory json,
-        string memory key
-    ) internal pure returns (int24) {
-        bytes memory jsonBytes = bytes(json);
-        bytes memory keyBytes = bytes(key);
-
-        for (uint256 i = 0; i < jsonBytes.length - keyBytes.length; i++) {
-            bool isMatch = true;
-            for (uint256 j = 0; j < keyBytes.length && isMatch; j++) {
-                if (jsonBytes[i + j] != keyBytes[j]) isMatch = false;
-            }
-            if (isMatch) {
-                uint256 pos = i + keyBytes.length;
-                while (pos < jsonBytes.length && jsonBytes[pos] != 0x3a) pos++;
-                pos++;
-                while (pos < jsonBytes.length && jsonBytes[pos] == 0x20) pos++;
-
-                bool neg = jsonBytes[pos] == 0x2d;
-                if (neg) pos++;
-
-                int256 val = 0;
-                while (pos < jsonBytes.length) {
-                    uint8 c = uint8(jsonBytes[pos]);
-                    if (c >= 0x30 && c <= 0x39) {
-                        val = val * 10 + int256(uint256(c - 0x30));
-                        pos++;
-                    } else break;
-                }
-                return int24(neg ? -val : val);
-            }
-        }
-        return 0;
-    }
-
     function _needsRebalance(PoolId poolId) internal view returns (bool) {
         (
             int24 lower,
             int24 upper,
+            uint128 activeLiquidity,
             ,
             ,
             ,
             ,
             ,
-            ,
-            ,
-            ,
+            uint256 idle0,
+            uint256 idle1,
             ,
             ,
             ,
@@ -400,10 +207,15 @@ contract SentinelAutomation is IFunctionsClient, AutomationCompatibleInterface {
             ,
             ,
             int24 tickSpacing,
-            ,
+            uint256 totalShares,
             bool isInit
         ) = hook.poolStates(poolId);
         if (!isInit) return false;
+
+        if (activeLiquidity == 0 && totalShares > 0 && (idle0 > 0 || idle1 > 0)) {
+            return true;
+        }
+
         (, int24 tickCurrent, , ) = StateLibrary.getSlot0(poolManager, poolId);
         return (tickCurrent < lower || tickCurrent > upper) && tickSpacing > 0;
     }

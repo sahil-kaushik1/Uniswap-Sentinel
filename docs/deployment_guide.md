@@ -55,7 +55,7 @@ forge script script/DeploySentinel.s.sol --account test1 --rpc-url $SEPOLIA_RPC_
 
 ## 4) Automation Options
 
-### Option A — Chainlink Automation + Functions
+### Option A — Chainlink Automation
 
 Deploy the automation contract and register pools (reads `deployment.json`):
 
@@ -64,31 +64,16 @@ forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLI
 ```
 
 Post-deploy (UI):
-- Add **SentinelAutomation** as a Functions consumer.
 - Register **Automation Upkeep** (custom logic) and fund it with LINK.
 
 Reference: [docs/chainlink_automate.md](./chainlink_automate.md)
 
 **Env:**
-- `USE_FUNCTIONS=true`
-- `CL_FUNCTIONS_ROUTER`
-- `CL_DON_ID`
-- `CL_SUB_ID`
-- `CL_GAS_LIMIT`
 - `DEPLOYMENT_JSON` (optional; defaults to `deployment.json`)
 
-### Option B (Cheapest) — Chainlink Automation Only
+### Option B — Manual Automation Deploy
 
-Skip Functions to reduce LINK costs. Set:
-
-- `USE_FUNCTIONS=false`
-- `POOL_MANAGER` (for on‑chain tick reads)
-
-Then deploy automation with:
-
-```
-forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
-```
+Use [script/DeploySentinelAutomation.s.sol](../script/DeploySentinelAutomation.s.sol) if you want to deploy without reading `deployment.json`, then add pools manually.
 
 ---
 

@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress"
 import { ArrowUpRight, ExternalLink, TrendingUp, Shield, Activity } from "lucide-react"
 import { useAccount } from "wagmi"
 import { formatUnits } from "viem"
-import { useAllPoolStates, useAllSharePrices, useLPCount } from "@/hooks/use-sentinel"
+import { useAllPoolStates, useAllSharePrices } from "@/hooks/use-sentinel"
 import { POOLS, SENTINEL_HOOK_ADDRESS, etherscanAddress, type PoolConfig } from "@/lib/addresses"
 import { DepositDialog } from "@/components/deposit-dialog"
 import { WithdrawDialog } from "@/components/withdraw-dialog"
@@ -66,7 +66,7 @@ export function PoolsPage() {
       return {
         config: pool,
         name: pool.name,
-        tvl: "$0",
+        tvl: "0",
         active: 50,
         idle: 50,
         status: "Not Deployed",
@@ -79,21 +79,25 @@ export function PoolsPage() {
       }
     }
 
-    const idle0 = Number(formatUnits(state.idle0, state.decimals0))
-    const idle1 = Number(formatUnits(state.idle1, state.decimals1))
-    const aave0 = Number(formatUnits(state.aave0, state.decimals0))
-    const aave1 = Number(formatUnits(state.aave1, state.decimals1))
-    const totalValue = idle0 + idle1 + aave0 + aave1
+    const totalLiquidityUnits =
+      state.totalShares > 0n && sharePrice > 0n
+        ? (sharePrice * state.totalShares) / 10n ** 18n
+        : 0n
 
     const hasActive = state.activeLiquidity > 0n
-    const activePercent = hasActive && totalValue > 0 ? 60 : hasActive ? 100 : 0
+    const activePercent = hasActive && totalLiquidityUnits > 0n ? 60 : hasActive ? 100 : 0
     const tickLower = state.activeTickLower
     const tickUpper = state.activeTickUpper
 
     return {
       config: pool,
       name: pool.name,
-      tvl: totalValue > 0 ? `$${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : state.totalShares > 0n ? "Pending Deploy" : "$0",
+      tvl:
+        totalLiquidityUnits > 0n
+          ? totalLiquidityUnits.toLocaleString()
+          : state.totalShares > 0n
+            ? "Pending Deploy"
+            : "0",
       active: activePercent,
       idle: 100 - activePercent,
       status: hasActive ? "In Range" : state.totalShares > 0n ? "Idle" : "Empty",
@@ -147,7 +151,7 @@ export function PoolsPage() {
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                   <div>
-                    <p className="text-muted-foreground">TVL</p>
+                    <p className="text-muted-foreground">Liquidity Units</p>
                     <p className="font-medium">{pool.tvl}</p>
                   </div>
                   <div>
@@ -200,7 +204,7 @@ export function PoolsPage() {
             {/* Quick Stats */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">TVL</p>
+                <p className="text-xs text-muted-foreground">Liquidity Units</p>
                 <p className="mt-1 text-lg font-bold">{selectedPool.tvl}</p>
               </div>
               <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
@@ -220,7 +224,7 @@ export function PoolsPage() {
             {/* Historical charts will appear here once rebalancing data is available */}
             <div className="rounded-lg border border-dashed border-border/40 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
               <Activity className="mx-auto h-8 w-8 mb-2 opacity-40" />
-              <p>TVL &amp; APR history will populate after Chainlink Automation begins rebalancing cycles.</p>
+              <p>Liquidity &amp; APR history will populate after Chainlink Automation begins rebalancing cycles.</p>
             </div>
 
             {/* Pool Config */}

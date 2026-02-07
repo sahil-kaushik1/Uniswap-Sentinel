@@ -49,10 +49,10 @@ contract DeployAll is Script {
         require(block.chainid == 11155111, "Must run on Sepolia");
 
         vm.startBroadcast();
-        address deployer = msg.sender;
+        address deployer = tx.origin;
         address maintainer = vm.envOr("CHAINLINK_MAINTAINER", deployer);
 
-        bool useMockFeeds = vm.envOr("USE_MOCK_FEEDS", false);
+        bool useMockFeeds = vm.envOr("USE_MOCK_FEEDS", true);
         address ethUsdFeed = ETH_USD_FEED;
         address btcUsdFeed = BTC_USD_FEED;
         address usdcUsdFeed = USDC_USD_FEED;
@@ -142,27 +142,64 @@ contract DeployAll is Script {
         uint160 flags = uint160(
             Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
         );
+        
+        // IMPORTANT: Using tx.origin (deployer) for both maintainer and owner
+        // This ensures the deployment address calling initializePool matches the owner
         bytes memory constructorArgs = abi.encode(
             POOL_MANAGER,
             address(mockAave),
-            maintainer, // maintainer
-            deployer // owner
+            tx.origin, // maintainer
+            tx.origin // owner - MUST be tx.origin, not deployer variable
         );
 
-        (, bytes32 salt) = HookMiner.find(
+        (address hookAddress, bytes32 salt) = HookMiner.find(
             CREATE2_DEPLOYER,
             flags,
             type(SentinelHook).creationCode,
             constructorArgs
         );
 
-        SentinelHook hook = new SentinelHook{salt: salt}(
-            IPoolManager(POOL_MANAGER),
-            address(mockAave),
-            maintainer,
-            deployer
-        );
+        console.log("Expected hook address:", hookAddress);
+        console.log("Checking if hook already deployed...");
+        
+        // Check if already deployed
+        uint256 codeSize;
+        assembly {
+            codeSize := extcodesize(hookAddress)
+        }
+        
+        SentinelHook hook;
+        if (codeSize > 0) {
+            console.log("Hook already exists at address, checking owner...");
+            hook = SentinelHook(payable(hookAddress));
+            address existingOwner = ISentinelHookAdmin(address(hook)).owner();
+            console.log("Existing hook owner:", existingOwner);
+            
+            if (existingOwner != deployer) {
+                console.log("WARNING: Existing hook has different owner!");
+                console.log("Expected:", deployer);
+                console.log("Actual:", existingOwner);
+                console.log("Cannot use existing deployment. Please:");
+                console.log("1. Transfer ownership from the old owner, OR");
+                console.log("2. Use a different deployment address by modifying constructor params");
+                revert("Hook exists with wrong owner");
+            }
+            console.log("Using existing deployment with correct owner");
+        } else {
+            console.log("Deploying new hook...");
+            hook = new SentinelHook{salt: salt}(
+                IPoolManager(POOL_MANAGER),
+                address(mockAave),
+                tx.origin, // Use tx.origin consistently
+                tx.origin // Use tx.origin consistently
+            );
+            console.log("Hook deployed successfully");
+        }
+        
         console.log("SentinelHook:", address(hook));
+        console.log("Hook owner:", ISentinelHookAdmin(address(hook)).owner());
+        console.log("tx.origin:", tx.origin);
+        console.log("deployer variable:", deployer);
 
         require(
             Hooks.hasPermission(
@@ -204,6 +241,11 @@ contract DeployAll is Script {
             uint160 sqrtPriceX96_1 = TickMath.getSqrtPriceAtTick(0);
             IPoolManager(POOL_MANAGER).initialize(key1, sqrtPriceX96_1);
 
+            console.log("About to initialize pool 1...");
+            console.log("Caller (tx.origin):", tx.origin);
+            console.log("Hook owner:", ISentinelHookAdmin(address(hook)).owner());
+            console.log("Are they equal?", tx.origin == ISentinelHookAdmin(address(hook)).owner());
+            
             hook.initializePool(
                 key1,
                 ethUsdFeed,
@@ -295,6 +337,10 @@ contract DeployAll is Script {
 
         // ─── 8. Approvals ───────────────────────────────────────
         console.log("\n--- 8. Setting Approvals ---");
+        // Temporarily stop broadcast to use deployer's address for approvals
+        vm.stopBroadcast();
+        vm.startBroadcast(deployer);
+        
         mETH.approve(address(hook), type(uint256).max);
         mUSDC.approve(address(hook), type(uint256).max);
         mWBTC.approve(address(hook), type(uint256).max);

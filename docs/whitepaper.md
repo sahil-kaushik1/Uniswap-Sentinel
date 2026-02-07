@@ -13,7 +13,7 @@ Uniswap v3/v4 liquidity provision is capital‑inefficient and operationally dem
 ## 2. Sentinel Solution
 Sentinel provides **Liquidity‑as‑a‑Service** with:
 - **Safety on‑chain:** A hook validates swap safety via oracle checks in the hot path.
-- **Execution off‑chain:** Chainlink Automation + Functions rebalance ranges on demand.
+- **Execution on‑chain:** Chainlink Automation rebalances ranges on demand.
 - **Idle yield routing:** Unused capital is deployed to Aave v3.
 - **Multi‑pool design:** One hook serves many pools, with strict per‑pool state isolation.
 

@@ -207,6 +207,22 @@ export const sentinelHookAbi = [
   },
 ] as const
 
+// Pool Manager ABI (for reading pool state)
+export const poolManagerAbi = [
+  {
+    name: "getSlot0",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "id", type: "bytes32" }],
+    outputs: [
+      { name: "sqrtPriceX96", type: "uint160" },
+      { name: "tick", type: "int24" },
+      { name: "protocolFee", type: "uint24" },
+      { name: "swapFee", type: "uint24" },
+    ],
+  },
+] as const
+
 // MockPriceFeed ABI (demo helpers)
 export const mockPriceFeedAbi = [
   {
@@ -215,6 +231,30 @@ export const mockPriceFeedAbi = [
     stateMutability: "nonpayable",
     inputs: [{ name: "answer", type: "int256" }],
     outputs: [],
+  },
+] as const
+
+// AggregatorV3 ABI (read price)
+export const aggregatorV3Abi = [
+  {
+    name: "decimals",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+  },
+  {
+    name: "latestRoundData",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "roundId", type: "uint80" },
+      { name: "answer", type: "int256" },
+      { name: "startedAt", type: "uint256" },
+      { name: "updatedAt", type: "uint256" },
+      { name: "answeredInRound", type: "uint80" },
+    ],
   },
 ] as const
 

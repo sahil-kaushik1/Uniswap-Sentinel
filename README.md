@@ -222,7 +222,7 @@ Optional env var for hook deployment:
 
 - `CHAINLINK_MAINTAINER` (sets the initial `maintainer`; defaults to deployer)
 
-### Automation (Chainlink Functions)
+### Automation (Chainlink Automation)
 
 ```bash
 # Deploy SentinelAutomation + register pools + set maintainer (all-in-one)
@@ -232,16 +232,10 @@ forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLI
 Required env vars for automation (in `.env`):
 
 - `SEPOLIA_RPC_URL` — Alchemy/Infura Sepolia endpoint
-- `CL_FUNCTIONS_ROUTER` — `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` (Sepolia)
-- `CL_DON_ID` — `fun-ethereum-sepolia-1`
-- `CL_SUB_ID` — Chainlink Functions subscription ID
-- `CL_GAS_LIMIT` — e.g. `300000`
-- `CL_FUNCTIONS_SOURCE` (optional — reads from `src/automation/functions/rebalancer.js`)
- - `DEPLOYMENT_JSON` (optional — defaults to `deployment.json` from `DeployAll`)
+- `DEPLOYMENT_JSON` (optional — defaults to `deployment.json` from `DeployAll`)
 
 Post-deploy Chainlink UI steps:
 1. **Register Automation Upkeep** at [automation.chain.link](https://automation.chain.link/) → Custom Logic → paste SentinelAutomation address → fund with LINK
-2. **Add Consumer** at [functions.chain.link](https://functions.chain.link/) → your subscription → Add Consumer → paste SentinelAutomation address
 
 ---
 
@@ -290,9 +284,9 @@ All contracts are **deployed and verified** on Sepolia. View on [Etherscan](http
 | Component | Details |
 |-----------|--------|
 | **Automation Upkeep** | Register via automation.chain.link |
-| **Functions Subscription** | Your subscription ID |
-| **DON ID** | `fun-ethereum-sepolia-1` |
-| **Functions Router** | `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` |
+| **Functions Subscription** | Not used |
+| **DON ID** | Not used |
+| **Functions Router** | Not used |
 
 ### Chainlink Oracles (Real Sepolia Feeds)
 

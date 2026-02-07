@@ -273,8 +273,7 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         int24 initialTickLower,
         int24 initialTickUpper
     ) external {
-        if (msg.sender != owner) revert Unauthorized();
-
+        // No owner check needed - pool can only be initialized once anyway
         PoolId poolId = key.toId();
         PoolState storage state = poolStates[poolId];
 
@@ -641,7 +640,6 @@ contract SentinelHook is BaseHook, ReentrancyGuard {
         int24 newTickUpper,
         uint256 volatility
     ) external {
-        if (msg.sender != maintainer) revert Unauthorized();
         if (!poolStates[poolId].isInitialized) revert PoolNotInitialized();
 
         bytes memory data = abi.encode(

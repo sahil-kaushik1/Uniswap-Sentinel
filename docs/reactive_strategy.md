@@ -1,6 +1,6 @@
 # Reactive Rebalancing Strategy (Sentinel Standard)
 
-The **Reactive Strategy** is the core decision-making logic used by the Sentinel Chainlink Automation + Functions flow. It aims to maximize fee capture while minimizing rebalancing costs by dynamically adjusting range width based on market conditions.
+The **Reactive Strategy** is the core decision-making logic used by the Sentinel Chainlink Automation flow. It aims to maximize fee capture while minimizing rebalancing costs by dynamically adjusting range width based on market conditions.
 
 ## 1. The Core Philosophy
 > "Don't predict where the price *will* go. Adapt to where the price *is* and how fast it is moving."
@@ -12,7 +12,7 @@ The **Reactive Strategy** is the core decision-making logic used by the Sentinel
 
 ## 2. Inputs (Data Sources)
 
-The off-chain agent (Chainlink Functions) gathers three key data points before making a decision:
+The on-chain automation gathers three key data points before making a decision:
 
 ### A. Current Price ($P_{current}$)
 *   **Source:** Chainlink Oracle (e.g., ETH/USD).

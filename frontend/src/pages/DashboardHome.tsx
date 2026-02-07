@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { useAccount } from "wagmi"
 import { formatUnits } from "viem"
-import { useAllPoolStates, useTotalPools } from "@/hooks/use-sentinel"
+import { useAllPoolStates, useAllSharePrices, useTotalPools } from "@/hooks/use-sentinel"
 import { POOLS } from "@/lib/addresses"
 import { MintDialog } from "@/components/mint-dialog"
 
@@ -28,6 +28,7 @@ export function DashboardHome() {
   const { isConnected } = useAccount()
   const { data: totalPools } = useTotalPools()
   const { data: poolStates } = useAllPoolStates()
+  const { data: sharePrices } = useAllSharePrices()
   const [mintOpen, setMintOpen] = useState(false)
 
   // Derive pool summaries from live data
@@ -58,19 +59,25 @@ export function DashboardHome() {
       }
     }
 
-    const idle0 = Number(formatUnits(state.idle0, state.decimals0))
-    const idle1 = Number(formatUnits(state.idle1, state.decimals1))
-    const aave0 = Number(formatUnits(state.aave0, state.decimals0))
-    const aave1 = Number(formatUnits(state.aave1, state.decimals1))
-    const totalIdle = idle0 + idle1 + aave0 + aave1
+    const priceResult = sharePrices?.[i]
+    const sharePrice = priceResult?.status === "success" ? (priceResult.result as bigint) : 0n
+    const totalLiquidityUnits =
+      state.totalShares > 0n && sharePrice > 0n
+        ? (sharePrice * state.totalShares) / 10n ** 18n
+        : 0n
 
     const hasActive = state.activeLiquidity > 0n
     // Estimate active % from whether liquidity is deployed
-    const activePercent = hasActive && totalIdle > 0 ? 60 : hasActive ? 100 : 0
+    const activePercent = hasActive && totalLiquidityUnits > 0n ? 60 : hasActive ? 100 : 0
 
     return {
       name: pool.name,
-      tvl: totalIdle > 0 ? `$${totalIdle.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : state.totalShares > 0n ? "Pending Deploy" : "$0",
+      tvl:
+        totalLiquidityUnits > 0n
+          ? totalLiquidityUnits.toLocaleString()
+          : state.totalShares > 0n
+            ? "Pending Deploy"
+            : "0",
       active: activePercent,
       status: hasActive ? "In Range" : state.totalShares > 0n ? "Idle" : "Empty",
       statusColor: hasActive ? "oklch(0.72 0.19 155)" : state.totalShares > 0n ? "oklch(0.8 0.16 85)" : "oklch(0.6 0.05 250)",
@@ -82,10 +89,10 @@ export function DashboardHome() {
 
   const kpis = [
     {
-      title: "Total Value Locked",
+      title: "Total Liquidity Units",
       value: isConnected && poolSummary.some((p) => p.isLive)
         ? poolSummary.filter((p) => p.isLive).map((p) => p.tvl).join(" | ")
-        : isConnected ? "$0" : "$—",
+        : isConnected ? "0" : "—",
       change: isConnected ? "Live" : "Connect wallet",
       trend: "up" as const,
       icon: DollarSign,
