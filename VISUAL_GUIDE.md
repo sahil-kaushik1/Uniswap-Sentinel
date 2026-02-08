@@ -11,7 +11,7 @@
 │  │                    POOL STATES (Per-Pool Isolation)                        │ │
 │  ├────────────────────────────────────────────────────────────────────────────┤ │
 │  │                                                                             │ │
-│  │  PoolId(ETH/USDC)           PoolId(WBTC/ETH)          PoolId(ARB/USDC)     │ │
+│  │  PoolId(mUSDC/mETH)         PoolId(mWBTC/mETH)        PoolId(mUSDT/mETH)   │ │
 │  │  ┌──────────────────┐       ┌──────────────────┐      ┌──────────────────┐ │ │
 │  │  │ Range: [100,200] │       │ Range: [-50,150] │      │ Range: [80,180]  │ │ │
 │  │  │ ActiveLiq: 5000  │       │ ActiveLiq: 2000  │      │ ActiveLiq: 1500  │ │ │
@@ -64,14 +64,14 @@
               ┌─────────────────────────────┼─────────────────────────────┐
               ▼                             ▼                             ▼
     ┌─────────────────────┐       ┌─────────────────────┐       ┌─────────────────────┐
-    │ ETH/USDC Pool       │       │ WBTC/ETH Pool       │       │ ARB/USDC Pool       │
+    │ mUSDC/mETH Pool     │       │ mWBTC/mETH Pool     │       │ mUSDT/mETH Pool     │
     │                     │       │                     │       │                     │
     │ LP1: 1000 shares    │       │ LP4: 800 shares     │       │ LP1: 500 shares     │
     │ LP2: 2000 shares    │       │ LP5: 1200 shares    │       │ LP6: 1300 shares    │
     │ LP3: 3000 shares    │       │ LP6: 500 shares     │       │                     │
     │                     │       │                     │       │                     │
               Active: 70%         │       │ Active: 60%         │       │ Active: 80%         │
-    │ Idle(USDC): To Aave │       │ Idle(WBTC): To Aave │       │ Idle(ARB): To Aave  │
+    │ Idle(USDC): To Aave │       │ Idle(WBTC): To Aave │       │ Idle(USDT): To Aave │
     │ Idle(ETH): To Aave  │       │ Idle(ETH): To Aave  │       │ Idle(USDC): To Aave │
     └──────────┬──────────┘       └──────────┬──────────┘       └──────────┬──────────┘
                │                             │                             │
@@ -328,7 +328,7 @@ Contract: SentinelHook
 │
 └── poolStates: mapping(PoolId => PoolState)
     │
-    ├── PoolId(ETH/USDC) => PoolState
+    ├── PoolId(mUSDC/mETH) => PoolState
     │   ├── activeTickLower: 100
     │   ├── activeTickUpper: 200
     │   ├── activeLiquidity: 5000e18
@@ -350,7 +350,7 @@ Contract: SentinelHook
     │   ├── totalShares: 6000e18
     │   └── isInitialized: true
     │
-    ├── PoolId(WBTC/ETH) => PoolState
+    ├── PoolId(mWBTC/mETH) => PoolState
     │   ├── activeTickLower: -50
     │   ├── activeTickUpper: 150
     │   ├── activeLiquidity: 2000e18
@@ -372,7 +372,7 @@ Contract: SentinelHook
     │   ├── totalShares: 2500e18
     │   └── isInitialized: true
     │
-    └── PoolId(ARB/USDC) => PoolState
+    └── PoolId(mUSDT/mETH) => PoolState
         ├── ... (similar structure)
         └── isInitialized: true
 ```

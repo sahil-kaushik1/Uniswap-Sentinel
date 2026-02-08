@@ -1,7 +1,7 @@
 # Sentinel Liquidity Protocol — Whitepaper
 
 ## Abstract
-Sentinel Liquidity Protocol is a trust‑minimized liquidity management layer for Uniswap v4 that combines an immutable hook (safety) with off‑chain automation (execution). LPs deposit assets into a pool‑scoped share system, and Sentinel autonomously maintains active liquidity ranges while routing idle capital to Aave v3. The protocol is designed to scale across many pools with isolated state and deterministic, per‑pool accounting.
+Sentinel v4 is an agentic liquidity management protocol for Uniswap v4 that pairs an immutable on‑chain hook with deterministic, automated maintenance to keep LP capital productive and protected. LPs deposit into a pool‑scoped share ledger where ownership tracks NAV across active liquidity, idle balances, and optional Aave v3 yield. The hook enforces oracle‑based safety checks on every swap, isolates state per `PoolId`, and exposes `maintain` to re‑center ranges, withdraw and redeploy liquidity, and rebalance idle assets without cross‑pool risk. The system is designed for multi‑pool scale, trust‑minimized execution, and transparent accounting that makes liquidity behavior predictable and auditable.
 
 ## 1. Problem Statement
 Uniswap v3/v4 liquidity provision is capital‑inefficient and operationally demanding. LPs must:

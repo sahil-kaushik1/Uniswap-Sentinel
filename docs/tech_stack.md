@@ -301,27 +301,27 @@ struct PoolState {
 
 | Token | Address | Etherscan |
 |-------|---------|----------|
-| **mETH** | `0x7f2F5eC740c31012eC5b9a0c6fC03805A3250baE` | [View](https://sepolia.etherscan.io/address/0x7f2F5eC740c31012eC5b9a0c6fC03805A3250baE) |
-| **mUSDC** | `0xF8753428B6071Bf98e4cE6340EC1dD2b70d80737` | [View](https://sepolia.etherscan.io/address/0xF8753428B6071Bf98e4cE6340EC1dD2b70d80737) |
-| **mWBTC** | `0xD67a91a2f99e9D4C66d6E1497A5659e2d336E2e3` | [View](https://sepolia.etherscan.io/address/0xD67a91a2f99e9D4C66d6E1497A5659e2d336E2e3) |
-| **mUSDT** | `0xd6dF30701Ec33C78077D871e82f70287C79B3A0a` | [View](https://sepolia.etherscan.io/address/0xd6dF30701Ec33C78077D871e82f70287C79B3A0a) |
+| **mETH** | `0x0e36C47a2cCf406ee12fac225D3Dd3Da465B859c` | [View](https://sepolia.etherscan.io/address/0x0e36C47a2cCf406ee12fac225D3Dd3Da465B859c) |
+| **mUSDC** | `0x69810Addf24E88fbfc39Cd207f9EE794E3f7Ba33` | [View](https://sepolia.etherscan.io/address/0x69810Addf24E88fbfc39Cd207f9EE794E3f7Ba33) |
+| **mWBTC** | `0x4cF23E8f91b86ee28A483d4ed28A6d8e2f3f7FaC` | [View](https://sepolia.etherscan.io/address/0x4cF23E8f91b86ee28A483d4ed28A6d8e2f3f7FaC) |
+| **mUSDT** | `0x001Aa5ae632aF10e4bf068D17be11ee984a3B400` | [View](https://sepolia.etherscan.io/address/0x001Aa5ae632aF10e4bf068D17be11ee984a3B400) |
 
 #### Aave aTokens (Mock)
 
 | aToken | Address | Underlying |
 |--------|---------|------------|
-| **maETH** | `0x0a0Dea09406f50726C22913472A23ED38175e93b` | mETH |
-| **maUSDC** | `0xA269315eA368CE2d5b9bca44aD58e1BD500ad878` | mUSDC |
-| **maWBTC** | `0x3cCf46C7c3D05F28be5D026b3301A3998FcDD5AB` | mWBTC |
-| **maUSDT** | `0x9eEf8d21C2db1Be765B5D8D8300E1ef6Ee14Db98` | mUSDT |
+| **maETH** | `0xE7F85Ee92dd51bbAB76700DF0198C366c2F9D07B` | mETH |
+| **maUSDC** | `0x2b9a68fa35bb2F6f88E90FB68265315B9dc8fb03` | mUSDC |
+| **maWBTC** | `0x049Ad2fc1b7d105C6c7502Cd1E1EF8af74c59139` | mWBTC |
+| **maUSDT** | `0x4197Aa46167911C3Ed87d023C0B704e597be8989` | mUSDT |
 
 #### Deployed Pools
 
 | Pool | Pool ID |
 |------|--------|
-| **mUSDC/mETH** | `0x359533828ea111dbbc1972077ac066a2897aa0c858cd0222574c69cbe5b7363a` |
-| **mWBTC/mETH** | `0x44db1798b86a9bd96fb3338f9541dc72068dd5f001fc788d2e12bdc5cb439aed` |
-| **mUSDT/mETH** | `0xe13f348a5ad53113f57940c858d272e73409e9437b752233b535952c7ed70480` |
+| **mUSDC/mETH** | `0xd81e2f7075ef839ab7897b6609296cb71b4b951bab1215cff428e8e58d6d9c86` |
+| **mWBTC/mETH** | `0xedaee9b731b3f6b66651873d25251d4164f053f6338e20cad90121735c7c25a1` |
+| **mUSDT/mETH** | `0x6c92e8eeb40fe91f771ca88bd635f4df6124ddf26602b17b58dc78c35d821890` |
 
 ### Chainlink Oracles (Sepolia — Real Feeds)
 

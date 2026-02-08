@@ -44,15 +44,15 @@ graph TD
     end
     
     subgraph "Uniswap v4 Pools"
-        Pool1[ETH/USDC]
-        Pool2[WBTC/ETH]
-        Pool3[ARB/USDC]
+        Pool1[mUSDC/mETH]
+        Pool2[mWBTC/mETH]
+        Pool3[mUSDT/mETH]
     end
     
     subgraph "External Protocols"
         Aave[Aave v3 - Yield]
         Oracle[Chainlink - Safety]
-        Automation[Chainlink Automation + Functions]
+        Automation[Chainlink Automation]
     end
     
     LP1 -->|Deposit| Hook
@@ -68,7 +68,7 @@ graph TD
     
     Hook <-->|Yield| Aave
     Hook <-->|Price Check| Oracle
-    Automation -->|maintain()| Hook
+    Automation -->|maintain| Hook
 ```
 
 ### Two-Path Design
@@ -248,36 +248,36 @@ All contracts are **deployed and verified** on Sepolia. View on [Etherscan](http
 | Contract | Address | Status |
 |----------|---------|--------|
 | **Uniswap PoolManager** | [`0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A`](https://sepolia.etherscan.io/address/0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A) | Canonical |
-| **SentinelHook** | [`0xC4C486Ab67d6e1bceA5DF14eBE2393EEBa0a6080`](https://sepolia.etherscan.io/address/0xC4C486Ab67d6e1bceA5DF14eBE2393EEBa0a6080#code) | ✅ Verified |
-| **SwapHelper** | [`0x176F75Dc4B71FB1f3808A789Fd36a94aE343836f`](https://sepolia.etherscan.io/address/0x176F75Dc4B71FB1f3808A789Fd36a94aE343836f#code) | ✅ Verified |
-| **SentinelAutomation** | Deployed via DeployAutomationFull | — |
-| **MockAave** | [`0xDDfDfD8b5313BcB7B2c60a604AC777F806747D31`](https://sepolia.etherscan.io/address/0xDDfDfD8b5313BcB7B2c60a604AC777F806747D31) | Deployed |
+| **SentinelHook** | [`0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080`](https://sepolia.etherscan.io/address/0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080#code) | ✅ Verified |
+| **SwapHelper** | [`0x0ce1552c2146D730e220aB7e9137249e0E651177`](https://sepolia.etherscan.io/address/0x0ce1552c2146D730e220aB7e9137249e0E651177#code) | ✅ Verified |
+| **SentinelAutomation** | [`0x24A79d2c74dEe4caff80aBEc21cA1C8bbD15135c`](https://sepolia.etherscan.io/address/0x24A79d2c74dEe4caff80aBEc21cA1C8bbD15135c) | Automation (Sepolia) |
+| **MockAave (manager)** | [`0xF8d4681bbFd7946B2f65FE2B7c4Fe043495D40b2`](https://sepolia.etherscan.io/address/0xF8d4681bbFd7946B2f65FE2B7c4Fe043495D40b2) | Deployed |
 
 ### Mock Tokens
 
 | Token | Address |
 |-------|--------|
-| **mETH** (Mock WETH) | [`0x7f2F5eC740c31012eC5b9a0c6fC03805A3250baE`](https://sepolia.etherscan.io/address/0x7f2F5eC740c31012eC5b9a0c6fC03805A3250baE) |
-| **mUSDC** | [`0xF8753428B6071Bf98e4cE6340EC1dD2b70d80737`](https://sepolia.etherscan.io/address/0xF8753428B6071Bf98e4cE6340EC1dD2b70d80737) |
-| **mWBTC** | [`0xD67a91a2f99e9D4C66d6E1497A5659e2d336E2e3`](https://sepolia.etherscan.io/address/0xD67a91a2f99e9D4C66d6E1497A5659e2d336E2e3) |
-| **mUSDT** | [`0xd6dF30701Ec33C78077D871e82f70287C79B3A0a`](https://sepolia.etherscan.io/address/0xd6dF30701Ec33C78077D871e82f70287C79B3A0a) |
+| **mETH** (Mock WETH) | [`0x0e36C47a2cCf406ee12fac225D3Dd3Da465B859c`](https://sepolia.etherscan.io/address/0x0e36C47a2cCf406ee12fac225D3Dd3Da465B859c) |
+| **mUSDC** | [`0x69810Addf24E88fbfc39Cd207f9EE794E3f7Ba33`](https://sepolia.etherscan.io/address/0x69810Addf24E88fbfc39Cd207f9EE794E3f7Ba33) |
+| **mWBTC** | [`0x4cF23E8f91b86ee28A483d4ed28A6d8e2f3f7FaC`](https://sepolia.etherscan.io/address/0x4cF23E8f91b86ee28A483d4ed28A6d8e2f3f7FaC) |
+| **mUSDT** | [`0x001Aa5ae632aF10e4bf068D17be11ee984a3B400`](https://sepolia.etherscan.io/address/0x001Aa5ae632aF10e4bf068D17be11ee984a3B400) |
 
 ### Aave aTokens (Mock)
 
 | aToken | Address | Underlying |
 |--------|---------|------------|
-| **maETH** | `0x0a0Dea09406f50726C22913472A23ED38175e93b` | mETH |
-| **maUSDC** | `0xA269315eA368CE2d5b9bca44aD58e1BD500ad878` | mUSDC |
-| **maWBTC** | `0x3cCf46C7c3D05F28be5D026b3301A3998FcDD5AB` | mWBTC |
-| **maUSDT** | `0x9eEf8d21C2db1Be765B5D8D8300E1ef6Ee14Db98` | mUSDT |
+| **maETH** | `0xE7F85Ee92dd51bbAB76700DF0198C366c2F9D07B` | mETH |
+| **maUSDC** | `0x2b9a68fa35bb2F6f88E90FB68265315B9dc8fb03` | mUSDC |
+| **maWBTC** | `0x049Ad2fc1b7d105C6c7502Cd1E1EF8af74c59139` | mWBTC |
+| **maUSDT** | `0x4197Aa46167911C3Ed87d023C0B704e597be8989` | mUSDT |
 
 ### Deployed Pools (3 Active)
 
 | Pool | Pool ID | Oracle |
 |------|---------|--------|
-| **mUSDC/mETH** | `0x359533...63a` | ETH/USD |
-| **mWBTC/mETH** | `0x44db17...9aed` | BTC/ETH (Ratio) |
-| **mUSDT/mETH** | `0xe13f34...0480` | ETH/USD |
+| **mUSDC/mETH** | `0xd81e2f7075ef839ab7897b6609296cb71b4b951bab1215cff428e8e58d6d9c86` | ETH/USD |
+| **mWBTC/mETH** | `0xedaee9b731b3f6b66651873d25251d4164f053f6338e20cad90121735c7c25a1` | BTC/ETH (Ratio) |
+| **mUSDT/mETH** | `0x6c92e8eeb40fe91f771ca88bd635f4df6124ddf26602b17b58dc78c35d821890` | ETH/USD |
 
 ### Chainlink Integration
 
