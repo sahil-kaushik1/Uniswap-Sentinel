@@ -2,6 +2,8 @@
 
 **Trust-Minimized Agentic Liquidity Management as a Service for Uniswap v4**
 
+**SentinelHook (Sepolia):** [0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080](https://sepolia.etherscan.io/address/0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080#code)
+
 ---
 
 ## 💡 The Problem
