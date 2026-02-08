@@ -13,6 +13,10 @@ import { ArrowUpRight, ExternalLink, TrendingUp, Shield, Activity } from "lucide
 import { useAccount } from "wagmi"
 import { formatUnits } from "viem"
 import { useAllPoolStates, useAllSharePrices } from "@/hooks/use-sentinel"
+import { computeActiveIdle } from "@/lib/pool-utils"
+import { useAllATokenBalances } from "@/hooks/use-aTokens"
+import { useAllSlot0 } from "@/hooks/use-slot0"
+import { useEthUsdPrice } from "@/hooks/use-oracles"
 import { POOLS, SENTINEL_HOOK_ADDRESS, etherscanAddress, type PoolConfig } from "@/lib/addresses"
 import { DepositDialog } from "@/components/deposit-dialog"
 import { WithdrawDialog } from "@/components/withdraw-dialog"
@@ -30,14 +34,22 @@ interface PoolDisplayData {
   deviationBps: number
   sharePrice: string
   lpCount: string
+  idleLQ?: string
+  yield0?: string | number
+  yield1?: string | number
+  tvlUsd?: string
+  yieldUsd?: string
 }
 
 export function PoolsPage() {
   const { isConnected } = useAccount()
   const { data: poolStates } = useAllPoolStates()
   const { data: sharePrices } = useAllSharePrices()
+  const { data: aTokenBalances } = useAllATokenBalances()
 
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const { data: slot0s } = useAllSlot0()
+  const ethPrice = useEthUsdPrice()
   const [depositPool, setDepositPool] = useState<PoolConfig | null>(null)
   const [withdrawPool, setWithdrawPool] = useState<PoolConfig | null>(null)
 
@@ -79,15 +91,107 @@ export function PoolsPage() {
       }
     }
 
-    const totalLiquidityUnits =
-      state.totalShares > 0n && sharePrice > 0n
-        ? (sharePrice * state.totalShares) / 10n ** 18n
-        : 0n
-
-    const hasActive = state.activeLiquidity > 0n
-    const activePercent = hasActive && totalLiquidityUnits > 0n ? 60 : hasActive ? 100 : 0
+    const { totalLiquidityUnits, idleLiquidityUnits, activePercent } = computeActiveIdle(state, sharePrice)
     const tickLower = state.activeTickLower
     const tickUpper = state.activeTickUpper
+    const hasActive = state.activeLiquidity > 0n
+
+    // compute Aave-derived yield (token0 + token1) using batch aToken balances
+    let yield0 = 0n
+    let yield1 = 0n
+    try {
+      const totals = new Map<string, bigint>()
+      poolStates?.forEach((r: any) => {
+        if (r?.status === "success") {
+          const s = r.result as any
+          if (s.aToken0 && s.aToken0 !== "0x0000000000000000000000000000000000000000") totals.set(s.aToken0, (totals.get(s.aToken0) || 0n) + BigInt(s.aave0))
+          if (s.aToken1 && s.aToken1 !== "0x0000000000000000000000000000000000000000") totals.set(s.aToken1, (totals.get(s.aToken1) || 0n) + BigInt(s.aave1))
+        }
+      })
+
+      const tokenAddrsSet = new Set<string>()
+      poolStates?.forEach((r: any) => {
+        if (r?.status === "success") {
+          const s = r.result as any
+          if (s.aToken0) tokenAddrsSet.add(s.aToken0)
+          if (s.aToken1) tokenAddrsSet.add(s.aToken1)
+        }
+      })
+
+      const tokenAddrs = Array.from(tokenAddrsSet)
+      const balMap = new Map<string, bigint>()
+      if (aTokenBalances) {
+        aTokenBalances.forEach((r: any, idx: number) => {
+          if (r?.status === "success") balMap.set(tokenAddrs[idx], BigInt(r.result))
+        })
+      }
+
+      const sState = state as any
+      if (sState.aToken0 && totals.get(sState.aToken0) && balMap.has(sState.aToken0)) {
+        const totalSharesFor = totals.get(sState.aToken0) || 0n
+        const currentBalance = balMap.get(sState.aToken0) || 0n
+        const poolShares = BigInt(sState.aave0)
+        const claim = totalSharesFor > 0n ? (currentBalance * poolShares) / totalSharesFor : 0n
+        if (claim > poolShares) yield0 = claim - poolShares
+      }
+
+      if (sState.aToken1 && totals.get(sState.aToken1) && balMap.has(sState.aToken1)) {
+        const totalSharesFor = totals.get(sState.aToken1) || 0n
+        const currentBalance = balMap.get(sState.aToken1) || 0n
+        const poolShares = BigInt(sState.aave1)
+        const claim = totalSharesFor > 0n ? (currentBalance * poolShares) / totalSharesFor : 0n
+        if (claim > poolShares) yield1 = claim - poolShares
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // compute poolPrice from slot0 (if available)
+    let poolPriceX18 = 0n
+    try {
+      const slot = slot0s?.[i]
+      if (slot?.status === "success") {
+        const sqrt = BigInt(slot.result[0] as unknown as string)
+        const numerator = sqrt * sqrt * 1000000000000000000n
+        const denom = 1n << 192n
+        poolPriceX18 = numerator / denom
+      }
+    } catch (e) {
+      poolPriceX18 = 0n
+    }
+
+    // compute total value in token1-equivalent (18-decimals)
+    const idle0Amount18 = state.idle0 > 0n ? (state.idle0 * (10n ** (18n - BigInt(state.decimals0)))) : 0n
+    const idle1Amount18 = state.idle1 > 0n ? (state.idle1 * (10n ** (18n - BigInt(state.decimals1)))) : 0n
+    const idle0Value18 = poolPriceX18 > 0n ? (idle0Amount18 * poolPriceX18) / 1000000000000000000n : 0n
+    const totalValueToken1_18 = idle0Value18 + idle1Amount18
+
+    // convert to USD using ETH/USD feed (token1 is mETH)
+    let totalValueUsd = 0n
+    try {
+      if (ethPrice?.status === "success") {
+        const answer = BigInt(ethPrice.data[1] as unknown as string)
+        const feedDecimals = 8n
+        totalValueUsd = (totalValueToken1_18 * answer) / (10n ** feedDecimals)
+      }
+    } catch (e) {
+      totalValueUsd = 0n
+    }
+
+    // USD yield: convert yield0/yield1 to token1-equivalent then to USD
+    const yield0Amount18 = yield0 > 0n ? yield0 * (10n ** (18n - BigInt(state.decimals0))) : 0n
+    const yield1Amount18 = yield1 > 0n ? yield1 * (10n ** (18n - BigInt(state.decimals1))) : 0n
+    const yieldToken1_18 = yield1Amount18 + (poolPriceX18 > 0n ? (yield0Amount18 * poolPriceX18) / 1000000000000000000n : 0n)
+    let yieldUsd = 0n
+    try {
+      if (ethPrice?.status === "success") {
+        const answer = BigInt(ethPrice.data[1] as unknown as string)
+        const feedDecimals = 8n
+        yieldUsd = (yieldToken1_18 * answer) / (10n ** feedDecimals)
+      }
+    } catch (e) {
+      yieldUsd = 0n
+    }
 
     return {
       config: pool,
@@ -98,6 +202,7 @@ export function PoolsPage() {
           : state.totalShares > 0n
             ? "Pending Deploy"
             : "0",
+      idleLQ: idleLiquidityUnits > 0n ? idleLiquidityUnits.toLocaleString() : "0",
       active: activePercent,
       idle: 100 - activePercent,
       status: hasActive ? "In Range" : state.totalShares > 0n ? "Idle" : "Empty",
@@ -107,6 +212,10 @@ export function PoolsPage() {
       deviationBps: Number(state.maxDeviationBps),
       sharePrice: sharePrice > 0n ? formatUnits(sharePrice, 18) : "1.0",
       lpCount: "—",
+      yield0: yield0 > 0n ? yield0.toLocaleString() : "0",
+      yield1: yield1 > 0n ? yield1.toLocaleString() : "0",
+      tvlUsd: totalValueUsd > 0n ? (Number(totalValueUsd / 100000000n)).toLocaleString() : undefined,
+      yieldUsd: yieldUsd > 0n ? (Number(yieldUsd / 100000000n)).toLocaleString() : undefined,
     }
   })
 
@@ -163,6 +272,20 @@ export function PoolsPage() {
                     <p className="font-medium truncate">{pool.oracle.split(" ")[0]}</p>
                   </div>
                 </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">Idle Liquidity Units</p>
+                    <p className="font-medium">{pool.idleLQ}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Active</p>
+                    <p className="font-medium">{pool.active}%</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Idle</p>
+                    <p className="font-medium">{pool.idle}%</p>
+                  </div>
+                </div>
                 <div className="mt-3">
                   <div className="flex justify-between text-xs text-muted-foreground mb-1">
                     <span>Active {pool.active}%</span>
@@ -199,6 +322,17 @@ export function PoolsPage() {
                 </a>
               </Button>
             </div>
+            {/* Aave Yield */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Aave Yield (token0)</p>
+                <p className="mt-1 text-lg font-bold">{selectedPool.yield0 ?? "0"}</p>
+              </div>
+              <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Aave Yield (token1)</p>
+                <p className="mt-1 text-lg font-bold">{selectedPool.yield1 ?? "0"}</p>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Quick Stats */}
@@ -218,6 +352,16 @@ export function PoolsPage() {
               <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Max Deviation</p>
                 <p className="mt-1 text-lg font-bold">{selectedPool.deviationBps} bps</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">TVL (USD)</p>
+                <p className="mt-1 text-lg font-bold">{selectedPool.tvlUsd ?? "—"}</p>
+              </div>
+              <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Aave Yield (USD)</p>
+                <p className="mt-1 text-lg font-bold">{selectedPool.yieldUsd ?? "0"}</p>
               </div>
             </div>
 

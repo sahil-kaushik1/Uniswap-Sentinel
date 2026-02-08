@@ -212,3 +212,5 @@ export function useAllLPPositions() {
     },
   })
 }
+
+// (Yield/event reads omitted — frontend currently shows idle amounts and idle liquidity units.)
