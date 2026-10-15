@@ -13,7 +13,7 @@ Traditional liquidity provision on Uniswap requires constant monitoring and reba
 - **Impermanent Loss:** Price movements outside their range mean zero fee income
 - **Active Management:** Manual rebalancing is time-consuming and gas-intensive
 - **Idle Capital:** Out-of-range liquidity earns nothing
-- **Trust Issues:** Existing "LP management" solutions require trusting a centralized bot
+- **Trust Issues:** Existing "LP management" solutions require trusting a centralized bot 
 
 ## 🎯 The Solution
 
