@@ -6,7 +6,7 @@
 TxId transactions can be seen on the above address on Etherscan. clicking the above addesses will show the transactions on Etherscan.
 
 --- 
-
+ 
 ## 💡 The Problem
 
 Traditional liquidity provision on Uniswap requires constant monitoring and rebalancing. LPs face:
