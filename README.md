@@ -1,3 +1,22 @@
+# 🛡️ Sentinel Liquidity Protocol
+
+**Trust-Minimized Agentic Liquidity Management as a Service for Uniswap v4** 
+  
+**SentinelHook (Sepolia):** [0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080](https://sepolia.etherscan.io/address/0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080#code)
+TxId transactions can be seen on the above address on Etherscan. clicking the above addesses will show the transactions on Etherscan. 
+
+---   
+
+
+
+  
+## 💡 The Problem
+
+Traditional liquidity provision on Uniswap requires constant monitoring and rebalancing. LPs face:
+- **Impermanent Loss:** Price movements outside their range mean zero fee income
+- **Active Management:** Manual rebalancing is time-consuming and gas-intensive
+- **Idle Capital:** Out-of-range liquidity earns nothing
+- **Trust Issues:** Existing "LP management" solutions require trusting a centralized bot 
 
 
 ## 🎯 The Solution
