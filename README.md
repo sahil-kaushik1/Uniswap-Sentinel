@@ -6,6 +6,7 @@
 TxId transactions can be seen on the above address on Etherscan. clicking the above addesses will show the transactions on Etherscan. 
 
 ---  
+
   
 ## 💡 The Problem
 
@@ -14,6 +15,7 @@ Traditional liquidity provision on Uniswap requires constant monitoring and reba
 - **Active Management:** Manual rebalancing is time-consuming and gas-intensive
 - **Idle Capital:** Out-of-range liquidity earns nothing
 - **Trust Issues:** Existing "LP management" solutions require trusting a centralized bot 
+
 
 ## 🎯 The Solution
 
