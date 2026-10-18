@@ -1,16 +1,23 @@
 # 🛡️ Sentinel Liquidity Protocol
 
-**Trust-Minimized Agentic Liquidity Management as a Service for Uniswap v4**
+**Trust-Minimized Agentic Liquidity Management as a Service for Uniswap v4** 
+  
+**SentinelHook (Sepolia):** [0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080](https://sepolia.etherscan.io/address/0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080#code)
+TxId transactions can be seen on the above address on Etherscan. clicking the above addesses will show the transactions on Etherscan. 
 
----
+---   
 
+
+
+  
 ## 💡 The Problem
 
 Traditional liquidity provision on Uniswap requires constant monitoring and rebalancing. LPs face:
 - **Impermanent Loss:** Price movements outside their range mean zero fee income
 - **Active Management:** Manual rebalancing is time-consuming and gas-intensive
 - **Idle Capital:** Out-of-range liquidity earns nothing
-- **Trust Issues:** Existing "LP management" solutions require trusting a centralized bot
+- **Trust Issues:** Existing "LP management" solutions require trusting a centralized bot 
+
 
 ## 🎯 The Solution
 
@@ -20,7 +27,7 @@ Traditional liquidity provision on Uniswap requires constant monitoring and reba
 
 | Problem | Sentinel Solution |
 |---------|-------------------|
-| **Trust** | Hybrid architecture: Immutable Hook (safety) + Gelato Automate (execution) |
+| **Trust** | Hybrid architecture: Immutable Hook (safety) + Chainlink Automation/Functions (execution) |
 | **Idle Capital** | Automatic routing to Aave v3 for lending yield |
 | **Multi-Pool** | Single hook contract serves unlimited pools |
 | **Gas Efficiency** | Shared infrastructure reduces per-LP costs |
@@ -44,15 +51,15 @@ graph TD
     end
     
     subgraph "Uniswap v4 Pools"
-        Pool1[ETH/USDC]
-        Pool2[WBTC/ETH]
-        Pool3[ARB/USDC]
+        Pool1[mUSDC/mETH]
+        Pool2[mWBTC/mETH]
+        Pool3[mUSDT/mETH]
     end
     
     subgraph "External Protocols"
         Aave[Aave v3 - Yield]
         Oracle[Chainlink - Safety]
-        Gelato[Gelato Automate - Execution]
+        Automation[Chainlink Automation]
     end
     
     LP1 -->|Deposit| Hook
@@ -68,7 +75,7 @@ graph TD
     
     Hook <-->|Yield| Aave
     Hook <-->|Price Check| Oracle
-    Gelato -->|maintain()| Hook
+    Automation -->|maintain| Hook
 ```
 
 ### Two-Path Design
@@ -79,9 +86,9 @@ graph TD
 - **Logic:** Oracle price deviation check (circuit breaker)
 - **Output:** TickCrossed event if price moved outside range
 
-#### ❄️ Cold Path (Gelato Rebalancing)
+#### ❄️ Cold Path (Chainlink Automation)
 - **Trigger:** TickCrossed event or scheduled interval
-- **Executor:** Gelato Automate (dedicated msg.sender recommended)
+- **Executor:** Chainlink Automation (Functions optional for off-chain strategy)
 - **Logic:** Calculate optimal range and Active/Idle split off-chain, then execute `maintain()`
 - **Output:** `maintain()` transaction to rebalance
 
@@ -102,9 +109,9 @@ graph TD
 ```
 1. Price moves outside active range
 2. beforeSwap emits TickCrossed event
-3. Gelato Automate detects event (or cron)
+3. Chainlink Automation detects event (or cron)
 4. Strategy computes optimal new range
-5. Gelato calls maintain(poolId, newRange, volatility)
+5. Chainlink Automation calls maintain(poolId, newRange, volatility)
 7. Hook: Withdraw old range → Calculate split → Deploy new range + Aave
 ```
 
@@ -125,22 +132,42 @@ graph TD
 sentinel-protocol/
 ├── src/                           # Smart Contracts
 │   ├── SentinelHook.sol          # Multi-pool hook (main contract)
-│   └── libraries/
-│       ├── OracleLib.sol         # Price deviation checks
-│       ├── YieldRouter.sol       # Active/Idle split calculations
-│       └── AaveAdapter.sol       # Aave v3 integration
+│   ├── libraries/
+│   │   ├── OracleLib.sol         # Price deviation checks
+│   │   ├── YieldRouter.sol       # Active/Idle split calculations
+│   │   └── AaveAdapter.sol       # Aave v3 integration
+│   └── automation/
+│       ├── SentinelAutomation.sol # Chainlink Automation + Functions
+│       └── functions/
+│           └── rebalancer.js     # Off-chain strategy computation
 │
-├── test/                          # Foundry Tests
-│   └── SentinelIntegration.t.sol # Fork tests
+├── test/                          # Foundry Tests (81 passing)
+│   ├── unit/                     # SentinelHookUnit, OracleLib, YieldRouter, AaveAdapter
+│   ├── fuzz/                     # Fuzz + invariant testing
+│   ├── integration/              # Multi-pool lifecycle tests
+│   └── mocks/                    # MockERC20, MockAavePool, MockOracle, etc.
 │
 ├── script/                        # Deployment Scripts
-│   └── DeploySentinel.s.sol
+│   ├── DeployAll.s.sol           # Full demo deploy (mocks + pools + seeds + JSON)
+│   ├── DeploySentinel.s.sol      # Production-style deploy
+│   ├── DeployAutomationFull.s.sol # All-in-one automation deploy + pool registration
+│   ├── DeploySentinelAutomation.s.sol # Automation contract deploy (standalone)
 │
-├── workflows/                     # Gelato Automate
-│   └── gelato-automate.md        # Task/resolver notes
+│
+├── frontend/                      # React Frontend (Vite + wagmi + shadcn/ui)
+│   └── src/
+│       ├── pages/                # Dashboard, Pools, Positions, Automation, Faucet
+│       ├── components/           # Deposit/Withdraw/Mint dialogs, Sidebar
+│       ├── hooks/                # use-sentinel.ts, use-tokens.ts
+│       └── lib/                  # addresses.ts, abi.ts, wagmi.ts
+│
+├── workflows/                     # Chainlink Automation
+│   └── sentinel-workflow.yaml    # Workflow spec (Chainlink)
 │
 ├── docs/                          # Documentation
-│   ├── gelato_automate.md        # Gelato Automate reference
+│   ├── chainlink_automate.md     # Chainlink Automation reference
+│   ├── whitepaper.md             # Protocol whitepaper
+│   ├── reactive_strategy.md      # Rebalancing strategy details
 │   └── tech_stack.md             # Technology details
 │
 ├── agents.md                      # AI Agent context (START HERE)
@@ -154,8 +181,8 @@ sentinel-protocol/
 
 ### Prerequisites
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) (`forge`, `cast`, `anvil`)
-- Node.js 18+ (for frontend, optional)
-- Base RPC URL (Alchemy/Infura)
+- Node.js 18+ (for frontend)
+- Sepolia RPC URL (Alchemy/Infura)
 
 ### Installation
 
@@ -174,11 +201,12 @@ forge build
 ### Running Tests
 
 ```bash
-# Unit tests
-forge test
+# Unit + fuzz tests
+forge test --match-path "test/unit/*.t.sol"
+forge test --match-path "test/fuzz/*.t.sol"
 
-# Fork tests (required for integration)
-forge test --fork-url $BASE_RPC_URL -vvv
+# Integration tests (fork)
+forge test --match-path "test/integration/*.t.sol" --fork-url $SEPOLIA_RPC_URL -vvv
 
 # Gas report
 forge test --gas-report
@@ -187,12 +215,94 @@ forge test --gas-report
 ### Deployment
 
 ```bash
-# Deploy to Base testnet
-forge script script/DeploySentinel.s.sol --rpc-url $BASE_TESTNET_RPC --broadcast
+# MAIN: Full demo deploy (mock tokens, mock Aave, pools, seeds) on Sepolia
+forge script script/DeployAll.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
 
-# Verify on Basescan
-forge verify-contract <ADDRESS> SentinelHook --chain base
+# Verify on Etherscan
+forge verify-contract <ADDRESS> SentinelHook --chain sepolia
 ```
+
+For deterministic demos, set `USE_MOCK_FEEDS=true` before running DeployAll.
+DeployAll also writes `deployment.json`; run `node update_addresses.js` to sync the frontend.
+
+Optional env var for hook deployment:
+
+- `CHAINLINK_MAINTAINER` (sets the initial `maintainer`; defaults to deployer)
+
+### Automation (Chainlink Automation)
+
+```bash
+# Deploy SentinelAutomation + register pools + set maintainer (all-in-one)
+forge script script/DeployAutomationFull.s.sol --account test1 --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
+```
+
+Required env vars for automation (in `.env`):
+
+- `SEPOLIA_RPC_URL` — Alchemy/Infura Sepolia endpoint
+- `DEPLOYMENT_JSON` (optional — defaults to `deployment.json` from `DeployAll`)
+
+Post-deploy Chainlink UI steps:
+1. **Register Automation Upkeep** at [automation.chain.link](https://automation.chain.link/) → Custom Logic → paste SentinelAutomation address → fund with LINK
+
+---
+
+## 🌐 Deployed Contracts (Sepolia Testnet)
+
+All contracts are **deployed and verified** on Sepolia. View on [Etherscan](https://sepolia.etherscan.io).
+
+### Core Contracts
+
+| Contract | Address | Status |
+|----------|---------|--------|
+| **Uniswap PoolManager** | [`0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A`](https://sepolia.etherscan.io/address/0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A) | Canonical |
+| **SentinelHook** | [`0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080`](https://sepolia.etherscan.io/address/0xA7F23aFF760f6e34E823Bbf529fE3Fa54C93A080#code) | ✅ Verified |
+| **SwapHelper** | [`0x0ce1552c2146D730e220aB7e9137249e0E651177`](https://sepolia.etherscan.io/address/0x0ce1552c2146D730e220aB7e9137249e0E651177#code) | ✅ Verified |
+| **SentinelAutomation** | [`0x24A79d2c74dEe4caff80aBEc21cA1C8bbD15135c`](https://sepolia.etherscan.io/address/0x24A79d2c74dEe4caff80aBEc21cA1C8bbD15135c) | Automation (Sepolia) |
+| **MockAave (manager)** | [`0xF8d4681bbFd7946B2f65FE2B7c4Fe043495D40b2`](https://sepolia.etherscan.io/address/0xF8d4681bbFd7946B2f65FE2B7c4Fe043495D40b2) | Deployed |
+
+### Mock Tokens
+
+| Token | Address |
+|-------|--------|
+| **mETH** (Mock WETH) | [`0x0e36C47a2cCf406ee12fac225D3Dd3Da465B859c`](https://sepolia.etherscan.io/address/0x0e36C47a2cCf406ee12fac225D3Dd3Da465B859c) |
+| **mUSDC** | [`0x69810Addf24E88fbfc39Cd207f9EE794E3f7Ba33`](https://sepolia.etherscan.io/address/0x69810Addf24E88fbfc39Cd207f9EE794E3f7Ba33) |
+| **mWBTC** | [`0x4cF23E8f91b86ee28A483d4ed28A6d8e2f3f7FaC`](https://sepolia.etherscan.io/address/0x4cF23E8f91b86ee28A483d4ed28A6d8e2f3f7FaC) |
+| **mUSDT** | [`0x001Aa5ae632aF10e4bf068D17be11ee984a3B400`](https://sepolia.etherscan.io/address/0x001Aa5ae632aF10e4bf068D17be11ee984a3B400) |
+
+### Aave aTokens (Mock)
+
+| aToken | Address | Underlying |
+|--------|---------|------------|
+| **maETH** | `0xE7F85Ee92dd51bbAB76700DF0198C366c2F9D07B` | mETH |
+| **maUSDC** | `0x2b9a68fa35bb2F6f88E90FB68265315B9dc8fb03` | mUSDC |
+| **maWBTC** | `0x049Ad2fc1b7d105C6c7502Cd1E1EF8af74c59139` | mWBTC |
+| **maUSDT** | `0x4197Aa46167911C3Ed87d023C0B704e597be8989` | mUSDT |
+
+### Deployed Pools (3 Active)
+
+| Pool | Pool ID | Oracle |
+|------|---------|--------|
+| **mUSDC/mETH** | `0xd81e2f7075ef839ab7897b6609296cb71b4b951bab1215cff428e8e58d6d9c86` | ETH/USD |
+| **mWBTC/mETH** | `0xedaee9b731b3f6b66651873d25251d4164f053f6338e20cad90121735c7c25a1` | BTC/ETH (Ratio) |
+| **mUSDT/mETH** | `0x6c92e8eeb40fe91f771ca88bd635f4df6124ddf26602b17b58dc78c35d821890` | ETH/USD |
+
+### Chainlink Integration
+
+| Component | Details |
+|-----------|--------|
+| **Automation Upkeep** | Register via automation.chain.link |
+| **Functions Subscription** | Not used |
+| **DON ID** | Not used |
+| **Functions Router** | Not used |
+
+### Chainlink Oracles (Real Sepolia Feeds)
+
+| Feed | Address |
+|------|---------|
+| ETH/USD | `0x694AA1769357215DE4FAC081bf1f309aDC325306` |
+| BTC/USD | `0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43` |
+| USDC/USD | `0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E` |
+| BTC/ETH (Ratio) | `0xc596b108197aEF64c6d349DcA8515dFFe4615502` |
 
 ---
 
@@ -205,12 +315,12 @@ Sentinel can manage ANY Uniswap v4 pool that:
 
 ### Example Configurations
 
-| Pool | Yield Currency | Oracle | Risk Profile |
-|------|----------------|--------|--------------|
-| ETH/USDC | USDC | ETH/USD | Blue chip |
-| WBTC/ETH | ETH | BTC/ETH | High volatility |
-| ARB/USDC | USDC | ARB/USD | L2 native |
-| stETH/ETH | ETH | stETH/ETH | LST arbitrage |
+| Pool | aToken0 Yield | aToken1 Yield | Oracle | Risk Profile |
+|------|---------------|---------------|--------|--------------|
+| ETH/USDC | aWETH | aUSDC | ETH/USD | Blue chip |
+| WBTC/ETH | aWBTC | aWETH | BTC/ETH | High volatility |
+| ARB/USDC | — (disabled) | aUSDC | ARB/USD | L2 native |
+| stETH/ETH | aStETH | aWETH | stETH/ETH | LST arbitrage |
 
 ---
 
@@ -225,8 +335,8 @@ Sentinel can manage ANY Uniswap v4 pool that:
 │ ├── LP share accounting (proportional claims only)         │
 │ └── Range validation (min/max bounds)                      │
 ├─────────────────────────────────────────────────────────────┤
-│ Level 2: Gelato Automate (Execution)                       │
-│ ├── Whitelisted executor (dedicated msg.sender recommended)│
+│ Level 2: Chainlink Automation (Execution)                  │
+│ ├── Whitelisted executor (automation contract)             │
 │ ├── Event/cron driven execution                             │
 │ └── No custody of LP funds                                  │
 ├─────────────────────────────────────────────────────────────┤
@@ -253,18 +363,42 @@ This project addresses the track criteria by:
 |-----------|----------------|
 | **Reliability** | Hook acts as hard "circuit breaker" - agents can't drain funds |
 | **Composability** | Deep Uniswap v4 + Aave v3 + Chainlink integration |
-| **Decentralization** | Automation execution via Gelato network; safety enforced on-chain |
+| **Decentralization** | Automation execution via Chainlink; safety enforced on-chain |
 | **Innovation** | First multi-pool LP management service on v4 |
 
 ---
 
-## 📚 Documentation
+## �️ Frontend
+
+The Sentinel frontend is a React single-page app for interacting with deployed pools on Sepolia.
+
+**Stack:** React 19 + Vite + TypeScript + wagmi v3 + viem v2 + shadcn/ui + Tailwind CSS v4
+
+### Running Locally
+
+```bash
+cd frontend
+npm install
+npm run dev     # http://localhost:5173
+```
+
+### Pages
+- **Dashboard** — TVL, share prices, yield distribution charts
+- **Pools** — Pool detail cards with deposit/withdraw dialogs
+- **Positions** — Per-wallet LP share view
+- **Automation** — Maintainer status and rebalance history
+- **Faucet** — One-click mock token claims for testing
+
+---
+
+## �📚 Documentation
 
 | Document | Purpose |
 |----------|---------|
 | **[agents.md](./agents.md)** | 🤖 AI Agent context - START HERE |
 | **[VISUAL_GUIDE.md](./VISUAL_GUIDE.md)** | 📊 Diagrams and flow charts |
-| **[docs/gelato_automate.md](./docs/gelato_automate.md)** | ⚙️ Gelato Automate reference |
+| **[docs/deployment_guide.md](./docs/deployment_guide.md)** | 🚀 End-to-end deployment guide |
+| **[docs/chainlink_automate.md](./docs/chainlink_automate.md)** | ⚙️ Chainlink Automation reference |
 | **[docs/tech_stack.md](./docs/tech_stack.md)** | 📚 Technology deep dive |
 
 ---
@@ -288,9 +422,13 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 - **Uniswap v4 Docs:** [docs.uniswap.org/contracts/v4](https://docs.uniswap.org/contracts/v4/overview)
 - **Aave v3 Docs:** [aave.com/docs/aave-v3](https://aave.com/docs/aave-v3/overview)
-- **Gelato Automate:** [docs.gelato.cloud](https://docs.gelato.cloud/)
+- **Chainlink Automation:** [automation.chain.link](https://automation.chain.link/)
 - **Foundry Book:** [book.getfoundry.sh](https://book.getfoundry.sh/)
 
 ---
 
 *Sentinel Liquidity Protocol - Autonomous Liquidity Management at Scale* 🛡️
+
+
+
+

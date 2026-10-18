@@ -1,3 +1,4 @@
+@@ -1,354 +1 @@
 # Technology Stack & Dependencies
 
 ## Core Infrastructure
@@ -21,7 +22,8 @@ The Sentinel Protocol is built as a **Uniswap v4 Hook** that can manage liquidit
 #### Hook Permissions Used
 ```solidity
 Hooks.Permissions({
-    beforeSwap: true,      // ✓ Circuit breaker (Hot Path)
+    beforeInitialize: true, // ✓ Register pool state
+    beforeSwap: true,       // ✓ Circuit breaker (Hot Path)
     // All other hooks: false - minimal gas footprint
 });
 ```
@@ -35,32 +37,31 @@ Hooks.Permissions({
 
 ---
 
-### ⚙️ Gelato Automate + 🔗 Chainlink Data Feeds
+### ⚙️ Chainlink Automation + 🔗 Chainlink Data Feeds
 
 **Role:** Automation Execution + Oracle Safety
 
-In the `gelato` branch, Sentinel uses:
-- **Gelato Automate** for scheduling/event-driven execution of `maintain()` (cold path)
+Sentinel uses:
+- **Chainlink Automation** for scheduling/event-driven execution of `maintain()` (cold path)
 - **Chainlink Data Feeds** for oracle-based circuit breaking (hot path)
 
 #### Components Used
 
 | Component | Purpose | Sentinel Integration |
 |-----------|---------|---------------------|
-| **Gelato Automate** | Task execution network | Executes `maintain(poolId, ...)` via whitelisted executor |
-| **Dedicated msg.sender** | Safer caller whitelisting | Hook `maintainer` set to Gelato dedicated sender (recommended) |
+| **Chainlink Automation** | Task execution network | Executes `maintain(poolId, ...)` via whitelisted executor |
+| **Automation Registry** | Authenticated execution | Hook `maintainer` set to Automation contract |
 | **Chainlink Data Feeds** | Price oracles | Circuit breaker price validation |
 
 #### Automation Capabilities (high level)
 - **Triggers:** event-driven (e.g., `TickCrossed`) and/or cron/time
-- **Dynamic inputs:** resolver and/or Web3 Functions
+- **Dynamic inputs:** Chainlink Functions or resolver logic
 - **Security:** whitelist the executor via the hook’s `maintainer`
 
 **Documentation:**
-- [Gelato Automate Reference](./gelato_automate.md)
-- [Gelato Docs](https://docs.gelato.cloud/)
+- [Chainlink Automation Reference](./chainlink_automate.md)
 - [Chainlink Developer Hub](https://dev.chain.link/)
-- [Data Feeds (Base)](https://docs.chain.link/data-feeds/price-feeds/addresses?network=base)
+- [Data Feeds (Sepolia)](https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum&page=1&search=&testnet=sepolia)
 
 ---
 
@@ -98,10 +99,16 @@ Idle capital (liquidity not currently needed in the active range) is deposited t
 | **Multiple Assets** | Each pool can use different yield asset | ETH pools → aWETH, USDC pools → aUSDC |
 
 #### Per-Pool Yield Configuration
+Sentinel supports **dual-asset yield**. Each pool can assign Aave aTokens per pool token.
+
 ```solidity
 struct PoolState {
-    Currency yieldCurrency;  // Token deposited to Aave (one per pool)
-    address aToken;          // Corresponding aToken address
+    address aToken0; // aToken for currency0 (address(0) disables yield)
+    address aToken1; // aToken for currency1 (address(0) disables yield)
+    uint256 idle0;
+    uint256 idle1;
+    uint256 aave0;
+    uint256 aave1;
     // ...
 }
 ```
@@ -167,8 +174,8 @@ stateDiagram-v2
 
 **Fork Testing Required:**
 ```bash
-# All integration tests must run against forked mainnet/Base
-forge test --fork-url $BASE_RPC_URL -vvv
+# All integration tests must run against forked Sepolia
+forge test --fork-url $SEPOLIA_RPC_URL -vvv
 ```
 
 **Documentation:** [Foundry Book](https://book.getfoundry.sh/)
@@ -226,20 +233,31 @@ struct PoolState {
     int24 activeTickLower;
     int24 activeTickUpper;
     uint128 activeLiquidity;
-    
+
     // Oracle & Safety
-    AggregatorV3Interface priceFeed;
+    address priceFeed;
+    bool priceFeedInverted;
     uint256 maxDeviationBps;
-    
-    // Yield Configuration
-    Currency yieldCurrency;
-    address aToken;
-    
+
+    // Yield Configuration (dual-asset)
+    address aToken0;
+    address aToken1;
+    uint256 idle0;
+    uint256 idle1;
+    uint256 aave0;
+    uint256 aave1;
+
+    // Cached Pool Config
+    Currency currency0;
+    Currency currency1;
+    uint8 decimals0;
+    uint8 decimals1;
+    uint24 fee;
+    int24 tickSpacing;
+
     // LP Accounting
     uint256 totalShares;
-    mapping(address => uint256) lpShares;
-    address[] registeredLPs;
-    
+
     // Status
     bool isInitialized;
 }
@@ -254,7 +272,7 @@ struct PoolState {
 | Layer | Protection | Implementation |
 |-------|------------|----------------|
 | **Hot Path** | Oracle circuit breaker | `OracleLib.checkPriceDeviation()` |
-| **Cold Path** | Whitelisted automation executor | `maintainer` gate (Gelato dedicated msg.sender recommended) |
+| **Cold Path** | Whitelisted automation executor | `maintainer` gate (Chainlink Automation contract) |
 | **LP Funds** | Share-based accounting | Cannot withdraw more than owned |
 | **Reentrancy** | ReentrancyGuard | All external-facing functions |
 | **Access Control** | Role-based | `onlyMaintainer`, `onlyOwner` |
@@ -268,20 +286,63 @@ struct PoolState {
 
 ## Network Deployments
 
-### Base Mainnet (Target)
+### Sepolia Testnet (Live Deployment)
 
-| Contract | Address | Role |
-|----------|---------|------|
-| **Uniswap PoolManager** | `0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865` | Pool management |
-| **Aave Pool** | `0xA238Dd80C259a72e81d7e4664a9801593F98d1c5` | Yield source |
-| **SentinelHook** | TBD | Multi-pool hook |
+#### Core Contracts
 
-### Chainlink Oracles (Base)
+| Contract | Address | Etherscan |
+|----------|---------|----------|
+| **Uniswap PoolManager** | `0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A` | [View](https://sepolia.etherscan.io/address/0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A) |
+| **SentinelHook** | `0xC4C486Ab67d6e1bceA5DF14eBE2393EEBa0a6080` | [Verified ✅](https://sepolia.etherscan.io/address/0xC4C486Ab67d6e1bceA5DF14eBE2393EEBa0a6080#code) |
+| **SwapHelper** | `0x176F75Dc4B71FB1f3808A789Fd36a94aE343836f` | [Verified ✅](https://sepolia.etherscan.io/address/0x176F75Dc4B71FB1f3808A789Fd36a94aE343836f#code) |
+| **SentinelAutomation** | Deployed via DeployAutomationFull | — |
+| **MockAave** | `0xDDfDfD8b5313BcB7B2c60a604AC777F806747D31` | [View](https://sepolia.etherscan.io/address/0xDDfDfD8b5313BcB7B2c60a604AC777F806747D31) |
+
+#### Mock Tokens
+
+| Token | Address | Etherscan |
+|-------|---------|----------|
+| **mETH** | `0x0e36C47a2cCf406ee12fac225D3Dd3Da465B859c` | [View](https://sepolia.etherscan.io/address/0x0e36C47a2cCf406ee12fac225D3Dd3Da465B859c) |
+| **mUSDC** | `0x69810Addf24E88fbfc39Cd207f9EE794E3f7Ba33` | [View](https://sepolia.etherscan.io/address/0x69810Addf24E88fbfc39Cd207f9EE794E3f7Ba33) |
+| **mWBTC** | `0x4cF23E8f91b86ee28A483d4ed28A6d8e2f3f7FaC` | [View](https://sepolia.etherscan.io/address/0x4cF23E8f91b86ee28A483d4ed28A6d8e2f3f7FaC) |
+| **mUSDT** | `0x001Aa5ae632aF10e4bf068D17be11ee984a3B400` | [View](https://sepolia.etherscan.io/address/0x001Aa5ae632aF10e4bf068D17be11ee984a3B400) |
+
+#### Aave aTokens (Mock)
+
+| aToken | Address | Underlying |
+|--------|---------|------------|
+| **maETH** | `0xE7F85Ee92dd51bbAB76700DF0198C366c2F9D07B` | mETH |
+| **maUSDC** | `0x2b9a68fa35bb2F6f88E90FB68265315B9dc8fb03` | mUSDC |
+| **maWBTC** | `0x049Ad2fc1b7d105C6c7502Cd1E1EF8af74c59139` | mWBTC |
+| **maUSDT** | `0x4197Aa46167911C3Ed87d023C0B704e597be8989` | mUSDT |
+
+#### Deployed Pools
+
+| Pool | Pool ID |
+|------|--------|
+| **mUSDC/mETH** | `0xd81e2f7075ef839ab7897b6609296cb71b4b951bab1215cff428e8e58d6d9c86` |
+| **mWBTC/mETH** | `0xedaee9b731b3f6b66651873d25251d4164f053f6338e20cad90121735c7c25a1` |
+| **mUSDT/mETH** | `0x6c92e8eeb40fe91f771ca88bd635f4df6124ddf26602b17b58dc78c35d821890` |
+
+### Chainlink Oracles (Sepolia — Real Feeds)
 
 | Feed | Address | Usage |
 |------|---------|-------|
-| ETH/USD | `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70` | ETH pairs circuit breaker |
-| USDC/USD | `0x7e860098F58bBFC8648a4311b374B1D669a2bc6B` | Stablecoin validation |
+| ETH/USD | `0x694AA1769357215DE4FAC081bf1f309aDC325306` | ETH pairs circuit breaker |
+| BTC/USD | `0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43` | BTC pairs circuit breaker |
+| USDC/USD | `0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E` | Stablecoin validation |
+| BTC/ETH (Ratio) | `0xc596b108197aEF64c6d349DcA8515dFFe4615502` | WBTC/ETH pool (derived ratio oracle) |
+
+For deterministic testing, use the on‑chain mock feed in [src/mocks/MockPriceFeed.sol](../src/mocks/MockPriceFeed.sol) and enable it via `USE_MOCK_FEEDS=true` in the deploy scripts.
+
+### Chainlink Automation & Functions
+
+| Component | Details |
+|-----------|--------|
+| **Automation Upkeep** | Register via automation.chain.link |
+| **Functions Subscription** | Your subscription ID |
+| **DON ID** | `fun-ethereum-sepolia-1` |
+| **Functions Router** | `0xb83E47C2bC239B3bf370bc41e1459A34b41238D0` |
 
 ---
 

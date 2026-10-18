@@ -10,6 +10,7 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {SentinelHook} from "../src/SentinelHook.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
 /// @title DeploySentinel
 /// @notice Multi-Pool Deployment script for Sentinel Hook
@@ -22,16 +23,22 @@ contract DeploySentinel is Script {
     //////////////////////////////////////////////////////////////*/
 
     // Uniswap v4 on Sepolia
-    address constant SEPOLIA_POOL_MANAGER = 0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A;
+    address constant SEPOLIA_POOL_MANAGER =
+        0x8C4BcBE6b9eF47855f97E675296FA3F6fafa5F1A;
 
     // Chainlink Price Feeds on Sepolia
-    address constant SEPOLIA_ETH_USD_FEED = 0x694AA1769357215DE4FAC081bf1f309aDC325306;
-    address constant SEPOLIA_USDC_USD_FEED = 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E;
-    address constant SEPOLIA_BTC_USD_FEED = 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43;
-    address constant SEPOLIA_LINK_USD_FEED = 0xc59E3633BAAC79493d908e63626716e204A45EdF;
+    address constant SEPOLIA_ETH_USD_FEED =
+        0x694AA1769357215DE4FAC081bf1f309aDC325306;
+    address constant SEPOLIA_USDC_USD_FEED =
+        0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E;
+    address constant SEPOLIA_BTC_USD_FEED =
+        0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43;
+    address constant SEPOLIA_LINK_USD_FEED =
+        0xc59E3633BAAC79493d908e63626716e204A45EdF;
 
     // Aave v3 on Sepolia
-    address constant SEPOLIA_AAVE_POOL = 0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951;
+    address constant SEPOLIA_AAVE_POOL =
+        0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951;
 
     // Test Tokens on Sepolia (Aave Faucet Tokens)
     address constant SEPOLIA_WETH = 0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c;
@@ -63,17 +70,17 @@ contract DeploySentinel is Script {
     address public maintainer;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
-
         // Determine network
         bool isSepolia = block.chainid == 11155111;
         bool isAnvil = block.chainid == 31337;
 
-        require(isSepolia || isAnvil, "Unsupported network: use Sepolia or Anvil");
+        require(
+            isSepolia || isAnvil,
+            "Unsupported network: use Sepolia or Anvil"
+        );
 
         console.log("=== Sentinel Multi-Pool Hook Deployment ===");
-        console.log("Deployer:", deployer);
+        console.log("Deployer:", tx.origin);
         console.log("Chain ID:", block.chainid);
         console.log("Network:", isSepolia ? "ETH Sepolia" : "Anvil (Local)");
 
@@ -82,18 +89,47 @@ contract DeploySentinel is Script {
             poolManager = IPoolManager(SEPOLIA_POOL_MANAGER);
             aavePool = SEPOLIA_AAVE_POOL;
         } else {
-            require(ANVIL_POOL_MANAGER != address(0), "Deploy mock contracts first");
+            require(
+                ANVIL_POOL_MANAGER != address(0),
+                "Deploy mock contracts first"
+            );
             poolManager = IPoolManager(ANVIL_POOL_MANAGER);
             aavePool = ANVIL_AAVE_POOL;
         }
 
-        // Automation executor (Gelato recommended) - deployer acts as maintainer initially
-        maintainer = vm.envOr("GELATO_EXECUTOR", deployer);
+        // Start broadcast with keystore or private key
+        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
+        if (deployerPrivateKey != 0) {
+            vm.startBroadcast(deployerPrivateKey);
+        } else {
+            vm.startBroadcast();
+        }
 
-        vm.startBroadcast(deployerPrivateKey);
+        address deployer = tx.origin;
 
-        // Deploy the multi-pool Sentinel Hook
-        hook = new SentinelHook(poolManager, aavePool, maintainer);
+        // Automation executor (Chainlink Automation) - deployer acts as maintainer initially
+        maintainer = vm.envOr("CHAINLINK_MAINTAINER", deployer);
+
+        // Deploy the multi-pool Sentinel Hook at a valid hook address
+        uint160 flags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
+        );
+        bytes memory constructorArgs = abi.encode(
+            poolManager,
+            aavePool,
+            maintainer,
+            deployer
+        );
+        address create2Deployer = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+        (address expectedAddress, bytes32 salt) = HookMiner.find(
+            create2Deployer,
+            flags,
+            type(SentinelHook).creationCode,
+            constructorArgs
+        );
+
+        hook = new SentinelHook{salt: salt}(poolManager, aavePool, maintainer, deployer);
+        require(address(hook) == expectedAddress, "Hook address mismatch");
 
         console.log("\n=== Hook Deployed ===");
         console.log("Sentinel Hook:", address(hook));
@@ -104,47 +140,71 @@ contract DeploySentinel is Script {
         // Verify hook permissions
         address hookAddress = address(hook);
         console.log("\n=== Hook Permissions ===");
-        console.log("beforeInitialize:", Hooks.hasPermission(IHooks(hookAddress), Hooks.BEFORE_INITIALIZE_FLAG));
-        console.log("beforeSwap:", Hooks.hasPermission(IHooks(hookAddress), Hooks.BEFORE_SWAP_FLAG));
+        console.log(
+            "beforeInitialize:",
+            Hooks.hasPermission(
+                IHooks(hookAddress),
+                Hooks.BEFORE_INITIALIZE_FLAG
+            )
+        );
+        console.log(
+            "beforeSwap:",
+            Hooks.hasPermission(IHooks(hookAddress), Hooks.BEFORE_SWAP_FLAG)
+        );
 
         vm.stopBroadcast();
 
         console.log("\n=== Next Steps ===");
         console.log("1. Verify the hook contract on Etherscan (Sepolia)");
         console.log("2. Initialize pools with `initializePool()` function");
-        console.log("3. Configure Gelato Automate executor as maintainer (or keep deployer for manual testing)");
-        console.log("4. Create a Gelato Automate task to call maintain(poolId, ...)\n");
+        console.log(
+            "3. Configure Chainlink Automation executor as maintainer (or keep deployer for manual testing)"
+        );
+        console.log(
+            "4. Register Automation to call maintain(poolId, ...)\n"
+        );
     }
 
     /// @notice Initialize an ETH/USDC pool with Sentinel management
     function initializeEthUsdcPool() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address hookAddress = vm.envAddress("SENTINEL_HOOK");
 
         require(hookAddress != address(0), "Set SENTINEL_HOOK env var");
 
         SentinelHook sentinelHook = SentinelHook(payable(hookAddress));
 
-        vm.startBroadcast(deployerPrivateKey);
+        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
+        if (deployerPrivateKey != 0) {
+            vm.startBroadcast(deployerPrivateKey);
+        } else {
+            vm.startBroadcast();
+        }
 
-        // Create pool key
+        // Create pool key - currencies must be sorted: currency0 < currency1
+        // USDC (0x94...) < WETH (0xC5...) on Sepolia
+        (Currency c0, Currency c1) = _sortCurrencies(SEPOLIA_WETH, SEPOLIA_USDC);
+        bool wethIsToken0 = Currency.unwrap(c0) == SEPOLIA_WETH;
+
         PoolKey memory key = PoolKey({
-            currency0: Currency.wrap(SEPOLIA_WETH),
-            currency1: Currency.wrap(SEPOLIA_USDC),
+            currency0: c0,
+            currency1: c1,
             fee: 3000, // 0.3% fee
             tickSpacing: 60,
             hooks: IHooks(hookAddress)
         });
 
         // Initialize Sentinel management for this pool
+        // Assign aTokens based on actual sort order
+        address aT0 = wethIsToken0 ? SEPOLIA_AWETH : SEPOLIA_AUSDC;
+        address aT1 = wethIsToken0 ? SEPOLIA_AUSDC : SEPOLIA_AWETH;
         sentinelHook.initializePool(
             key,
-            SEPOLIA_ETH_USD_FEED, // Oracle
-            Currency.wrap(SEPOLIA_USDC), // Yield currency (USDC goes to Aave)
-            SEPOLIA_AUSDC, // aToken address
-            500, // 5% max deviation
-            -887220, // ~$500 lower bound
-            887220 // ~$5000 upper bound
+            SEPOLIA_ETH_USD_FEED,
+            true,
+            aT0,
+            aT1,            500,
+            -887220,
+            887220
         );
 
         vm.stopBroadcast();
@@ -156,33 +216,44 @@ contract DeploySentinel is Script {
 
     /// @notice Initialize a LINK/USDC pool with Sentinel management
     function initializeLinkUsdcPool() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address hookAddress = vm.envAddress("SENTINEL_HOOK");
 
         require(hookAddress != address(0), "Set SENTINEL_HOOK env var");
 
         SentinelHook sentinelHook = SentinelHook(payable(hookAddress));
 
-        vm.startBroadcast(deployerPrivateKey);
+        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
+        if (deployerPrivateKey != 0) {
+            vm.startBroadcast(deployerPrivateKey);
+        } else {
+            vm.startBroadcast();
+        }
 
-        // Create pool key
+        // Create pool key - currencies must be sorted: currency0 < currency1
+        // USDC (0x94...) < LINK (0xf8...) on Sepolia
+        (Currency c0, Currency c1) = _sortCurrencies(SEPOLIA_LINK, SEPOLIA_USDC);
+        bool linkIsToken0 = Currency.unwrap(c0) == SEPOLIA_LINK;
+
         PoolKey memory key = PoolKey({
-            currency0: Currency.wrap(SEPOLIA_LINK),
-            currency1: Currency.wrap(SEPOLIA_USDC),
+            currency0: c0,
+            currency1: c1,
             fee: 3000, // 0.3% fee
             tickSpacing: 60,
             hooks: IHooks(hookAddress)
         });
 
         // Initialize Sentinel management for this pool
+        // Assign aTokens based on actual sort order
+        address aT0 = linkIsToken0 ? address(0) : SEPOLIA_AUSDC;
+        address aT1 = linkIsToken0 ? SEPOLIA_AUSDC : address(0);
         sentinelHook.initializePool(
             key,
-            SEPOLIA_LINK_USD_FEED, // Oracle
-            Currency.wrap(SEPOLIA_USDC), // Yield currency (USDC goes to Aave)
-            SEPOLIA_AUSDC, // aToken address
-            800, // 8% max deviation (LINK more volatile)
-            -276324, // Lower bound
-            276324 // Upper bound
+            SEPOLIA_LINK_USD_FEED,
+            true,
+            aT0,
+            aT1,            800,
+            -276324,
+            276324
         );
 
         vm.stopBroadcast();
@@ -191,5 +262,15 @@ contract DeploySentinel is Script {
         console.log("LINK/USDC Pool initialized with Sentinel");
         console.log("Pool ID:", vm.toString(PoolId.unwrap(poolId)));
     }
-}
 
+    /// @notice Helper to sort two addresses into (currency0, currency1) order
+    function _sortCurrencies(address a, address b) internal pure returns (Currency c0, Currency c1) {
+        if (a < b) {
+            c0 = Currency.wrap(a);
+            c1 = Currency.wrap(b);
+        } else {
+            c0 = Currency.wrap(b);
+            c1 = Currency.wrap(a);
+        }
+    }
+}
